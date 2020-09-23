@@ -1,25 +1,13 @@
 """Tokenization classes."""
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+from __future__ import (absolute_import, division, print_function,                unicode_literals)
 import collections
 import os
-import sys
-import unicodedata
 import random
-import six
 import logging
-import sentencepiece as spm
-from torch.utils.data import Dataset
-import torch
 import numpy as np
-
-from callback.progressbar import ProgressBar
 from configs import Constants
-
-# logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
-# FORMAT = '%(pathname)s %(filename)s  %(funcName)s %(lineno)d %(asctime)-15s  %(message)s'
 FORMAT = ' %(filename)s %(lineno)d %(funcName)s %(asctime)-15s  %(message)s'
 logging.basicConfig(format=FORMAT,level=logging.INFO)
 
@@ -56,7 +44,7 @@ def load_spliter(doc):
       spliter[c] = grams
   return spliter
 
-def shake(line, vocab,noise=0.5):
+def shake(line, vocab,noise=0):
   # insert del replace swap
   rand=random.random()
   if rand>noise or not line :
@@ -210,15 +198,6 @@ class ShangTokenizer(object):
       logger.info(f"vocabulary saved -> {vocab_file} {bujian_file}" )
       return (vocab_file,bujian_file)
 
-
-# HeadTail = {
-#   'S': 0,
-#   'B': 1,
-#   'E': 2,
-#   'M': 3
-# }
-# stage: warnup pretrain train eval
-
 class SentenceWorded(object):
   def __init__(self, words, tokenizer, noise=0):
     self.tokenizer = tokenizer
@@ -242,7 +221,6 @@ class SentenceWorded(object):
           char_label = 0 if j==0 else 1
           if word_maksed or char_maksed:
             bujian = Constants.TOKEN_MASK
-          # self.tokens.append(self.tokenizer.token2idx(bujian))
           self.tokens.append( bujian)
           self.char_label.append(char_label)
           self.word_label.append(word_label)
@@ -250,6 +228,7 @@ class SentenceWorded(object):
 
   def get_features(self):
     return (self.tokens, self.token_label,self.char_label, self.word_label)
+
 
 class Sentence(object):
   def __init__(self, line, tokenizer, noise=0):

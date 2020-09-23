@@ -114,8 +114,8 @@ class PretrainTokenedDataset(Dataset):
 
   def __getitem__(self, idx):
     ( tokens,input_mask,type_ids,token_label,char_label,word_label,length,relation_lable) =self.self_feature(idx)
-    # task_type_id = torch.tensor(tokens_tensor.shape).new_full(tokens_tensor.shape, Constants.TASK_SELF)
-    return (np.array(tokens),np.array(input_mask),np.array(type_ids),np.array(token_label),np.array(char_label),np.array(word_label),length,relation_lable)
+    # return (np.array(tokens),np.array(input_mask),np.array(type_ids),np.array(token_label),np.array(char_label),np.array(word_label),length,relation_lable)
+    return  (tokens, input_mask, type_ids, token_label, char_label, word_label, length, relation_lable)
 
 
   def self_feature(self, idx):

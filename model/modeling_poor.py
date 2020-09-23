@@ -1,4 +1,4 @@
-"""PyTorch ALBERT model. """
+"""PyTorch PoorBERT model. """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import logging
 import math
@@ -10,25 +10,16 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from configs import Constants
 from .activition import wing, WingNorm, LinearNorm, SqrtNorm, relu0, penalized_tanh, ptanh
 from .modeling_utils import PreTrainedModel, prune_linear_layer
-from .configuration_albert import AlbertConfig
+from .configuration_bert import BertConfig
 from .file_utils import add_start_docstrings
 
 logger = logging.getLogger(__name__)
-import time
-t0=time.time()
-def time_cost(tag):
-    t1=time.time()
-    cost=t1-t0
-    logger.info(f" {tag}  cost {cost} ")
-    return t1
 
-ALBERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'albert-base': "",
-    'albert-large': "",
-    'albert-xlarge': "",
-    'albert-xxlarge': "",
+BERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
+    'poor-base': "",
 }
-def load_tf_weights_in_albert(model, config, tf_checkpoint_path):
+
+def load_tf_weights_in_bert(model, config, tf_checkpoint_path):
     """ Load tf checkpoints in a pytorch model.
     """
     try:
@@ -37,12 +28,10 @@ def load_tf_weights_in_albert(model, config, tf_checkpoint_path):
         import tensorflow as tf
     except ImportError:
         logger.error("Loading a TensorFlow model in PyTorch, requires TensorFlow to be installed. Please see "
-                     "https://www.tensorflow.org/install/ for installation instructions.")
+            "https://www.tensorflow.org/install/ for installation instructions.")
         raise
     tf_path = os.path.abspath(tf_checkpoint_path)
     logger.info("Converting TensorFlow checkpoint from {}".format(tf_path))
-    if not os.path.exists(tf_path+'/checkpoint'):
-        tf_path = tf_path + "/variables/variables"
     # Load weights from TF model
     init_vars = tf.train.list_variables(tf_path)
     names = []
@@ -52,9 +41,8 @@ def load_tf_weights_in_albert(model, config, tf_checkpoint_path):
         array = tf.train.load_variable(tf_path, name)
         names.append(name)
         arrays.append(array)
+
     for name, array in zip(names, arrays):
-        name = name.replace("attention_1","attention")
-        name = name.replace("ffn_1","ffn")
         name = name.split('/')
         # adam_v and adam_m are variables used in AdamWeightDecayOptimizer to calculated m and v
         # which are not required for using pretrained model
@@ -65,12 +53,8 @@ def load_tf_weights_in_albert(model, config, tf_checkpoint_path):
         for m_name in name:
             if re.fullmatch(r'[A-Za-z]+_\d+', m_name):
                 l = re.split(r'_(\d+)', m_name)
-            elif re.fullmatch(r'[A-Za-z]+_+[A-Za-z]+_\d+', m_name):
-                l = re.split(r'_(\d+)', m_name)
             else:
                 l = [m_name]
-            if l[0] in ['LayerNorm', 'attention', 'ffn'] and len(l) >= 2:
-                l = ["_".join(l[:-1])]
             if l[0] == 'kernel' or l[0] == 'gamma':
                 pointer = getattr(pointer, 'weight')
             elif l[0] == 'output_bias' or l[0] == 'beta':
@@ -88,7 +72,6 @@ def load_tf_weights_in_albert(model, config, tf_checkpoint_path):
             if len(l) >= 2:
                 num = int(l[1])
                 pointer = pointer[num]
-
         if m_name[-11:] == '_embeddings':
             pointer = getattr(pointer, 'weight')
         elif m_name == 'kernel':
@@ -101,6 +84,7 @@ def load_tf_weights_in_albert(model, config, tf_checkpoint_path):
         logger.info("Initialize PyTorch weight {}".format(name))
         pointer.data = torch.from_numpy(array)
     return model
+
 
 def gelu(x):
     """ Original Implementation of the gelu activation function in Google Bert repo when initially created.
@@ -122,42 +106,40 @@ def swish(x):
 ACT2FN = {"gelu": gelu, "relu": torch.nn.functional.relu,"relu0":relu0, "swish": swish, "gelu_new": gelu_new,"wing":wing,"ptanh":ptanh}
 NORM2FN = {"layer_norm":torch.nn.LayerNorm,"linear_norm":LinearNorm,"wing_norm":WingNorm,"sqrt_norm":SqrtNorm}
 
-class AlbertEmbeddings(nn.Module):
+class BertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings.
     """
     def __init__(self, config):
-        super(AlbertEmbeddings, self).__init__()
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.embedding_size, padding_idx=0)
-        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.embedding_size)
-        self.type_embeddings = nn.Embedding(config.type_vocab_size, config.embedding_size)
+        super(BertEmbeddings, self).__init__()
+        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
+        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
-        self.LayerNorm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
+        self.LayerNorm = NORM2FN[config.norm](config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, input_ids, type_ids=None, position_ids=None):
+    def forward(self, input_ids, token_type_ids=None, position_ids=None):
         batchsize,seq_length = input_ids.size()[:2]
         if position_ids is None:
             position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
             # position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
             position_ids = position_ids.unsqueeze(0).repeat(batchsize,1)
-        if type_ids is None:
-            type_ids = torch.zeros_like(input_ids)
+        if token_type_ids is None:
+            token_type_ids = torch.zeros_like(input_ids)
         if len(input_ids.size())>=3:
             words_embeddings=input_ids
         else:
             words_embeddings = self.word_embeddings(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
-        type_embeddings = self.type_embeddings(type_ids)
-        embeddings = words_embeddings + position_embeddings + type_embeddings
-        # embeddings = wing(embeddings)
-        # embeddings = self.LayerNorm(words_embeddings)+self.LayerNorm(position_embeddings)+self.LayerNorm(task_type_embeddings)
+        token_type_embeddings = self.token_type_embeddings(token_type_ids)
+        embeddings = words_embeddings + position_embeddings + token_type_embeddings
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         return embeddings
 
-class AlbertSelfAttention(nn.Module):
+class BertSelfAttention(nn.Module):
     def __init__(self, config):
-        super(AlbertSelfAttention, self).__init__()
+        super(BertSelfAttention, self).__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
@@ -170,14 +152,9 @@ class AlbertSelfAttention(nn.Module):
         self.key = nn.Linear(config.hidden_size, self.all_head_size)
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-        self.act_fn=ACT2FN[config.hidden_act]
-        self.LayerNorm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
 
     def transpose_for_scores(self, x):  # batch*128*768 -> batch*16*128*4
-        # x=self.act_fn(x)
-        # x=self.LayerNorm(x)
-        # new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, -1)
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
@@ -199,7 +176,6 @@ class AlbertSelfAttention(nn.Module):
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
-        # attention_probs = self.LayerNorm(attention_scores)/4+0.5
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
@@ -217,23 +193,23 @@ class AlbertSelfAttention(nn.Module):
         outputs = (context_layer, attention_probs) if self.output_attentions else (context_layer,)
         return outputs  # hidden
 
-class AlbertSelfOutput(nn.Module):
+class BertSelfOutput(nn.Module):
     def __init__(self, config):
-        super(AlbertSelfOutput, self).__init__()
+        super(BertSelfOutput, self).__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        # self.norm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
+        self.norm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
-        # hidden_states = self.norm(hidden_states)
+        hidden_states = self.norm(hidden_states)
         hidden_states = self.dropout(hidden_states)
         return hidden_states  # 1 tensor
 
-class AlbertAttention(nn.Module):
+class BertAttention(nn.Module):
     def __init__(self, config):
-        super(AlbertAttention, self).__init__()
-        self.self = AlbertSelfAttention(config)
-        self.output = AlbertSelfOutput(config)
+        super(BertAttention, self).__init__()
+        self.self = BertSelfAttention(config)
+        self.output = BertSelfOutput(config)
         self.pruned_heads = set()
 
     def prune_heads(self, heads):
@@ -262,136 +238,87 @@ class AlbertAttention(nn.Module):
     def forward(self, input_tensor, attention_mask=None, head_mask=None):
         self_outputs = self.self(input_tensor, attention_mask, head_mask)
         attention_output = self.output(self_outputs[0], input_tensor)
-        # attention_output =  self_outputs[0]
-        outputs = (attention_output,self_outputs)
+        outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
         return outputs  # attn hidden
 
-class AlbertOutput(nn.Module):
+class BertIntermediate(nn.Module):
     def __init__(self, config):
-        super(AlbertOutput, self).__init__()
-        self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.norm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
-
-    def forward(self, hidden_states):
-        hidden_states = self.dense(hidden_states)
-        hidden_states = self.norm(hidden_states)
-        hidden_states = self.dropout(hidden_states)
-        return hidden_states  # 1 tensor
-
-class AlbertIntermediate(nn.Module):
-    def __init__(self, config):
-        super(AlbertIntermediate, self).__init__()
+        super(BertIntermediate, self).__init__()
         self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
-        self.output = AlbertOutput(config)
-        self.LayerNorm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
         if isinstance(config.hidden_act, str) or (sys.version_info[0] == 2 and isinstance(config.hidden_act, unicode)):
             self.intermediate_act_fn = ACT2FN[config.hidden_act]
         else:
             self.intermediate_act_fn = config.hidden_act
 
     def forward(self, hidden_states):
-        intermediate_output = self.dense(hidden_states)
-        intermediate_output = self.intermediate_act_fn(intermediate_output)
-        # intermediate_output = self.LayerNorm(intermediate_output)
-        output = self.output(intermediate_output)
-        return output  # hidden
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.intermediate_act_fn(hidden_states)
+        return hidden_states
 
-class AlbertFFN(nn.Module):
+class BertOutput(nn.Module):
     def __init__(self, config):
-        super(AlbertFFN, self).__init__()
-        self.intermediate = AlbertIntermediate(config)
+        super(BertOutput, self).__init__()
+        self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
+        self.LayerNorm =  NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, attention_output):
-        output = self.intermediate(attention_output)
-        return output  # 1 tensor
+    def forward(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
 
-class AlbertLayer(nn.Module):
+class BertLayer(nn.Module):
     def __init__(self, config):
-        super(AlbertLayer, self).__init__()
-        self.attention = AlbertAttention(config)
-        self.ffn = AlbertFFN(config)
-        self.LayerNorm = NORM2FN[config.norm](config.hidden_size, eps=config.layer_norm_eps)
-        self.LayerNorm_1 = NORM2FN[config.norm](config.hidden_size, eps=config.layer_norm_eps)
+        super(BertLayer, self).__init__()
+        self.attention = BertAttention(config)
+        self.intermediate = BertIntermediate(config)
+        self.output = BertOutput(config)
 
     def forward(self, hidden_states, attention_mask=None, head_mask=None):
         attention_outputs = self.attention(hidden_states, attention_mask, head_mask)
-        attention_output = self.LayerNorm(attention_outputs[0] )+hidden_states
-        ffn_output = self.ffn(attention_output)
-        ffn_output = self.LayerNorm_1(ffn_output)+attention_output
-        outputs = (ffn_output,) + attention_outputs[1:] # add attentions if we output them
-        return outputs  # hidden atten
+        attention_output = attention_outputs[0]
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+        outputs = (layer_output,) + attention_outputs[1:]  # add attentions if we output them
+        return outputs
 
-class AlbertGroup(nn.Module):
+class BertEncoder(nn.Module):
     def __init__(self, config):
-        super(AlbertGroup, self).__init__()
-        self.inner_group_num = config.inner_group_num
-        self.inner_group = nn.ModuleList([AlbertLayer(config) for _ in range(config.inner_group_num)])
-
-    def forward(self, hidden_states, attention_mask, head_mask):
-        layer_attentions = ()
-        layer_hidden_states = ()
-        for inner_group_idx in range(self.inner_group_num):
-            layer_module = self.inner_group[inner_group_idx]
-            layer_outputs = layer_module(hidden_states, attention_mask, head_mask)
-            hidden_states = layer_outputs[0]
-            layer_attentions = layer_attentions + (layer_outputs[1],)
-            layer_hidden_states = layer_hidden_states + (hidden_states,)
-        return (layer_hidden_states, layer_attentions)  # hidden atten
-
-class AlbertTransformer(nn.Module):
-    def __init__(self, config):
-        super(AlbertTransformer, self).__init__()
+        super(BertEncoder, self).__init__()
         self.output_attentions = config.output_attentions
         self.output_hidden_states = config.output_hidden_states
-        self.num_hidden_layers = config.num_hidden_layers
-        self.num_hidden_groups = config.num_hidden_groups
-        self.group = nn.ModuleList([AlbertGroup(config) for _ in range(config.num_hidden_groups)])
+        self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask, head_mask):
+    def forward(self, hidden_states, attention_mask=None, head_mask=None):
         all_hidden_states = ()
         all_attentions = ()
-        for layer_idx in range(self.num_hidden_layers):
-            # if self.output_hidden_states and layer_idx == 0:
-            #     all_hidden_states = all_hidden_states + (hidden_states,)
-            group_idx = int(layer_idx / self.num_hidden_layers * self.num_hidden_groups)
-            layer_module = self.group[group_idx]
-            layer_outputs = layer_module(hidden_states, attention_mask, head_mask[layer_idx])
-            hidden_states = layer_outputs[0][-1]
-            if self.output_attentions:
-                all_attentions = all_attentions + layer_outputs[1]
+        for i, layer_module in enumerate(self.layer):
             if self.output_hidden_states:
-                all_hidden_states = all_hidden_states + layer_outputs[0]
+                all_hidden_states = all_hidden_states + (hidden_states,)
+
+            layer_outputs = layer_module(hidden_states, attention_mask, head_mask[i])
+            hidden_states = layer_outputs[0]
+
+            if self.output_attentions:
+                all_attentions = all_attentions + (layer_outputs[1],)
+
+        # Add last layer
+        if self.output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
+
         outputs = (hidden_states,)
         if self.output_hidden_states:
             outputs = outputs + (all_hidden_states,)
         if self.output_attentions:
             outputs = outputs + (all_attentions,)
-        return outputs  # last-layer hidden state, (all hidden states), (all attentions)   # hidden
+        return outputs  # last-layer hidden state, (all hidden states), (all attentions)
 
-class AlbertEncoder(nn.Module):
+class BertPooler(nn.Module):
     def __init__(self, config):
-        super(AlbertEncoder, self).__init__()
-        self.hidden_size = config.hidden_size
-        self.embedding_size = config.embedding_size
-        self.embedding_hidden_mapping_in = nn.Linear(self.embedding_size, self.hidden_size)
-        self.transformer = AlbertTransformer(config)
-
-    def forward(self, hidden_states, attention_mask=None, head_mask=None):
-        if self.embedding_size != self.hidden_size:
-            prev_output = self.embedding_hidden_mapping_in(hidden_states)
-        else:
-            prev_output = hidden_states
-        outputs = self.transformer(prev_output, attention_mask, head_mask)
-        return outputs  # last-layer hidden state, (all hidden states), (all attentions)   # hidden
-
-class AlbertPooler(nn.Module):
-    def __init__(self, config):
-        super(AlbertPooler, self).__init__()
+        super(BertPooler, self).__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.activation = nn.Tanh()
-        # self.activation = ACT2FN[config.hidden_act]
-        # self.LayerNorm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
 
     def forward(self, hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
@@ -399,75 +326,78 @@ class AlbertPooler(nn.Module):
         first_token_tensor = hidden_states[:, 0]
         pooled_output = self.dense(first_token_tensor)
         pooled_output = self.activation(pooled_output)
-        # pooled_output = self.LayerNorm(pooled_output)
-        return pooled_output   # first hidden
+        return pooled_output
 
-class AlbertPredictionHeadTransform(nn.Module):
+class BertPredictionHeadTransform(nn.Module):
     def __init__(self, config):
-        super(AlbertPredictionHeadTransform, self).__init__()
-        self.dense = nn.Linear(config.hidden_size, config.embedding_size)
+        super(BertPredictionHeadTransform, self).__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         if isinstance(config.hidden_act, str) or (sys.version_info[0] == 2 and isinstance(config.hidden_act, unicode)):
             self.transform_act_fn = ACT2FN[config.hidden_act]
         else:
             self.transform_act_fn = config.hidden_act
-        self.LayerNorm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
+        self.LayerNorm =  NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
 
     def forward(self, hidden_states):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.transform_act_fn(hidden_states)
         hidden_states = self.LayerNorm(hidden_states)
-        return hidden_states  # seq
+        return hidden_states
 
-class AlbertLMPredictionHead(nn.Module):
+class BertLMPredictionHead(nn.Module):
     def __init__(self, config):
-        super(AlbertLMPredictionHead, self).__init__()
-        self.transform = AlbertPredictionHeadTransform(config)
+        super(BertLMPredictionHead, self).__init__()
+        self.transform = BertPredictionHeadTransform(config)
+
         # The output weights are the same as the input embeddings, but there is
         # an output-only bias for each token.
-        self.decoder = nn.Linear(config.embedding_size,config.vocab_size,bias=False)
+        self.decoder = nn.Linear(config.hidden_size,
+                                 config.vocab_size,
+                                 bias=False)
+
         self.bias = nn.Parameter(torch.zeros(config.vocab_size))
 
     def forward(self, hidden_states):
         hidden_states = self.transform(hidden_states)
         hidden_states = self.decoder(hidden_states) + self.bias
-        return hidden_states  # seq vocab
+        return hidden_states
 
-class AlbertOnlyMLMHead(nn.Module):
+class BertOnlyMLMHead(nn.Module):
     def __init__(self, config):
-        super(AlbertOnlyMLMHead, self).__init__()
-        self.predictions = AlbertLMPredictionHead(config)
+        super(BertOnlyMLMHead, self).__init__()
+        self.predictions = BertLMPredictionHead(config)
 
     def forward(self, sequence_output):
         prediction_scores = self.predictions(sequence_output)
         return prediction_scores
 
-class AlbertOnlyNSPHead(nn.Module):
+class BertOnlyNSPHead(nn.Module):
     def __init__(self, config):
-        super(AlbertOnlyNSPHead, self).__init__()
+        super(BertOnlyNSPHead, self).__init__()
         self.seq_relationship = nn.Linear(config.hidden_size, 2)
 
     def forward(self, pooled_output):
         seq_relationship_score = self.seq_relationship(pooled_output)
         return seq_relationship_score
 
-class AlbertPreTrainingHeads(nn.Module):
+class BertPreTrainingHeads(nn.Module):
     def __init__(self, config):
-        super(AlbertPreTrainingHeads, self).__init__()
-        self.predictions = AlbertLMPredictionHead(config)
+        super(BertPreTrainingHeads, self).__init__()
+        self.predictions = BertLMPredictionHead(config)
         self.seq_relationship = nn.Linear(config.hidden_size, 2)
 
     def forward(self, sequence_output, pooled_output):
         prediction_scores = self.predictions(sequence_output)
         seq_relationship_score = self.seq_relationship(pooled_output)
-        return prediction_scores, seq_relationship_score   # seq cls
+        return prediction_scores, seq_relationship_score
 
-class AlbertPreTrainedModel(PreTrainedModel):
+class BertPreTrainedModel(PreTrainedModel):
     """ An abstract class to handle weights initialization and
         a simple interface for dowloading and loading pretrained models.
     """
-    config_class = AlbertConfig
-    pretrained_model_archive_map = ALBERT_PRETRAINED_MODEL_ARCHIVE_MAP
-    load_tf_weights = load_tf_weights_in_albert
+    config_class = BertConfig
+    pretrained_model_archive_map = BERT_PRETRAINED_MODEL_ARCHIVE_MAP
+    load_tf_weights = load_tf_weights_in_bert
     base_model_prefix = "bert"
 
     def _init_weights(self, module):
@@ -476,42 +406,55 @@ class AlbertPreTrainedModel(PreTrainedModel):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-        # elif isinstance(module, AlbertLayerNorm):
-        elif isinstance(module, torch.nn.LayerNorm):
+        elif isinstance(module,  torch.nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
         if isinstance(module, nn.Linear) and module.bias is not None:
             module.bias.data.zero_()
 
 
-ALBERT_START_DOCSTRING = r"""    The ALBERT model was proposed in
-    `ALBERT: A Lite BERT for Self-supervised Learning of Language Representations`_
-    by Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush Sharma, Radu Soricut. 
+BERT_START_DOCSTRING = r"""    The BERT model was proposed in
+    `BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding`_
+    by Jacob Devlin, Ming-Wei Chang, Kenton Lee and Kristina Toutanova. It's a bidirectional transformer
+    pre-trained using a combination of masked language modeling objective and next sentence prediction
+    on a large corpus comprising the Toronto Book Corpus and Wikipedia.
+
     This model is a PyTorch `torch.nn.Module`_ sub-class. Use it as a regular PyTorch Module and
     refer to the PyTorch documentation for all matter related to general usage and behavior.
+
     .. _`BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding`:
-        https://arxiv.org/abs/1909.11942
+        https://arxiv.org/abs/1810.04805
+
     .. _`torch.nn.Module`:
         https://pytorch.org/docs/stable/nn.html#module
+
     Parameters:
-        config (:class:`~transformers.ALbertConfig`): Model configuration class with all the parameters of the model. 
+        config (:class:`~transformers.BertConfig`): Model configuration class with all the parameters of the model. 
             Initializing with a config file does not load the weights associated with the model, only the configuration.
             Check out the :meth:`~transformers.PreTrainedModel.from_pretrained` method to load the model weights.
 """
 
-ALBERT_INPUTS_DOCSTRING = r"""
+BERT_INPUTS_DOCSTRING = r"""
     Inputs:
         **input_ids**: ``torch.LongTensor`` of shape ``(batch_size, sequence_length)``:
             Indices of input sequence tokens in the vocabulary.
-            To match pre-training, ALBERT input sequence should be formatted with [CLS] and [SEP] tokens as follows:
+            To match pre-training, BERT input sequence should be formatted with [CLS] and [SEP] tokens as follows:
+
             (a) For sequence pairs:
+
                 ``tokens:         [CLS] is this jack ##son ##ville ? [SEP] no it is not . [SEP]``
+
                 ``token_type_ids:   0   0  0    0    0     0       0   0   1  1  1  1   1   1``
+
             (b) For single sequences:
+
                 ``tokens:         [CLS] the dog is hairy . [SEP]``
+
                 ``token_type_ids:   0   0   0   0  0     0   0``
-            ALBert is a model with absolute position embeddings so it's usually advised to pad the inputs on
+
+            Bert is a model with absolute position embeddings so it's usually advised to pad the inputs on
             the right rather than the left.
+
             Indices can be obtained using :class:`transformers.BertTokenizer`.
             See :func:`transformers.PreTrainedTokenizer.encode` and
             :func:`transformers.PreTrainedTokenizer.convert_tokens_to_ids` for details.
@@ -533,9 +476,9 @@ ALBERT_INPUTS_DOCSTRING = r"""
             ``1`` indicates the head is **not masked**, ``0`` indicates the head is **masked**.
 """
 
-@add_start_docstrings("The bare Albert Model transformer outputting raw hidden-states without any specific head on top.",
-                      ALBERT_START_DOCSTRING, ALBERT_INPUTS_DOCSTRING)
-class AlbertModel(AlbertPreTrainedModel):
+@add_start_docstrings("The bare Bert Model transformer outputting raw hidden-states without any specific head on top.",
+                      BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertModel(BertPreTrainedModel):
     r"""
     Outputs: `Tuple` comprising various elements depending on the configuration (config) and inputs:
         **last_hidden_state**: ``torch.FloatTensor`` of shape ``(batch_size, sequence_length, hidden_size)``
@@ -561,13 +504,12 @@ class AlbertModel(AlbertPreTrainedModel):
         outputs = model(input_ids)
         last_hidden_states = outputs[0]  # The last hidden-state is the first element of the output tuple
     """
-
     def __init__(self, config):
-        super(AlbertModel, self).__init__(config)
+        super(BertModel, self).__init__(config)
 
-        self.embeddings = AlbertEmbeddings(config)
-        self.encoder = AlbertEncoder(config)
-        self.pooler = AlbertPooler(config)
+        self.embeddings = BertEmbeddings(config)
+        self.encoder = BertEncoder(config)
+        self.pooler = BertPooler(config)
 
         self.init_weights()
 
@@ -585,14 +527,14 @@ class AlbertModel(AlbertPreTrainedModel):
         for layer, heads in heads_to_prune.items():
             self.encoder.layer[layer].attention.prune_heads(heads)
 
-    def forward(self, input_ids, attention_mask=None, type_ids=None, position_ids=None, head_mask=None):
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None):
         batch,seq=input_ids.size()[:2]
         if attention_mask is None:
             # attention_mask = torch.ones_like(input_ids)
             attention_mask = torch.ones((batch,seq),dtype=input_ids.dtype,device=input_ids.device)
-        if type_ids is None:
+        if token_type_ids is None:
             # task_type_ids = torch.zeros_like(input_ids)
-            type_ids = torch.zeros((batch, seq), dtype=input_ids.dtype, device=input_ids.device)
+            token_type_ids = torch.zeros((batch, seq), dtype=input_ids.dtype, device=input_ids.device)
 
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, to_seq_length]
@@ -619,28 +561,25 @@ class AlbertModel(AlbertPreTrainedModel):
                 head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
                 head_mask = head_mask.expand(self.config.num_hidden_layers, -1, -1, -1, -1)
             elif head_mask.dim() == 2:
-                head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(
-                    -1)  # We can specify head_mask for each layer
-            head_mask = head_mask.to(
-                dtype=next(self.parameters()).dtype)  # switch to fload if need + fp16 compatibility
+                head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # We can specify head_mask for each layer
+            head_mask = head_mask.to(dtype=next(self.parameters()).dtype)  # switch to fload if need + fp16 compatibility
         else:
             head_mask = [None] * self.config.num_hidden_layers
 
-        embedding_output = self.embeddings(input_ids, position_ids=position_ids, type_ids=type_ids)
+        embedding_output = self.embeddings(input_ids, position_ids=position_ids, token_type_ids=token_type_ids)
         encoder_outputs = self.encoder(embedding_output,
                                        extended_attention_mask,
                                        head_mask=head_mask)
         sequence_output = encoder_outputs[0]
         pooled_output = self.pooler(sequence_output)
 
-        outputs = (sequence_output, pooled_output,) + encoder_outputs[
-                                                      1:]  # add hidden_states and attentions if they are here
+        outputs = (sequence_output, pooled_output,) + encoder_outputs[1:]  # add hidden_states and attentions if they are here
         return outputs  # sequence_output, pooled_output, (hidden_states), (attentions)  # seq [cls]
 
 @add_start_docstrings("""Bert Model with two heads on top as done during the pre-training:
     a `masked language modeling` head and a `next sentence prediction (classification)` head. """,
-                      ALBERT_START_DOCSTRING, ALBERT_INPUTS_DOCSTRING)
-class AlbertForPreTraining(AlbertPreTrainedModel):
+    BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertForPreTraining(BertPreTrainedModel):
     r"""
         **masked_lm_labels**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size, sequence_length)``:
             Labels for computing the masked language modeling loss.
@@ -673,21 +612,15 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
         outputs = model(input_ids)
         prediction_scores, seq_relationship_scores = outputs[:2]
     """
-
     def __init__(self, config):
-        super(AlbertForPreTraining, self).__init__(config)
-        self.bert = AlbertModel(config)
-
-        self.predictions = AlbertLMPredictionHead(config)
+        super(BertForPreTraining, self).__init__(config)
+        self.bert = BertModel(config)
+        self.predictions = BertLMPredictionHead(config)
         self.seq_relationship = nn.Linear(config.hidden_size, config.sentence_relation_size)  # relation
-        self.activation = nn.Tanh()  # poller nn.Tanh()
-        self.norm = NORM2FN[config.norm](config.embedding_size, eps=config.layer_norm_eps)
 
         # self.cls = AlbertPreTrainingHeads(config)
-        # self.tasks=config.tasks
         self.char_labeler = nn.Linear(config.hidden_size, self.config.char_lable_size)   # char
         self.word_labeler = nn.Linear(config.hidden_size, self.config.word_lable_size)   # word
-        # self.modify_labeler = nn.Linear(config.hidden_size, 2)  # mofidy
         self.qa_labeler = nn.Linear(config.hidden_size, 2)  # qa
 
         self.init_weights()
@@ -699,17 +632,16 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
         """
         self._tie_or_clone_weights(self.predictions.decoder, self.bert.embeddings.word_embeddings)
 
-    def forward(self, input_ids, attention_mask=None, type_ids=None, position_ids=None, head_mask=None,
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
                 masked_lm_labels=None, next_sentence_label=None, tasks=[]):
 
         outputs = self.bert(input_ids,
                             attention_mask=attention_mask,
                             position_ids=position_ids,
                             head_mask=head_mask,
-                            type_ids=type_ids)
+                            token_type_ids=token_type_ids)
         # return outputs
         sequence_output, pooled_output, hidden_states = outputs[:3]
-        # pooled_output = self.bert.pooler(pooled_output)
         seq2=hidden_states[len(hidden_states)//2]
         # seq2=hidden_states[-1]
         pooled2 = self.bert.pooler(seq2)  # layer-2  pooled output
@@ -733,8 +665,8 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
         return outputs  # (loss), prediction_scores, seq_relationship_score, (hidden_states), (attentions)  # seq cls
 
 @add_start_docstrings("""Bert Model with a `language modeling` head on top. """,
-                      ALBERT_START_DOCSTRING, ALBERT_INPUTS_DOCSTRING)
-class AlbertForMaskedLM(AlbertPreTrainedModel):
+    BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertForMaskedLM(BertPreTrainedModel):
     r"""
         **masked_lm_labels**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size, sequence_length)``:
             Labels for computing the masked language modeling loss.
@@ -760,12 +692,10 @@ class AlbertForMaskedLM(AlbertPreTrainedModel):
         outputs = model(input_ids, masked_lm_labels=input_ids)
         loss, prediction_scores = outputs[:2]
     """
-
     def __init__(self, config):
-        super(AlbertForMaskedLM, self).__init__(config)
-
-        self.bert = AlbertModel(config)
-        self.cls = AlbertOnlyMLMHead(config)
+        super(BertForMaskedLM, self).__init__(config)
+        self.bert = BertModel(config)
+        self.cls = BertOnlyMLMHead(config)
 
         self.init_weights()
         self.tie_weights()
@@ -796,10 +726,9 @@ class AlbertForMaskedLM(AlbertPreTrainedModel):
 
         return outputs  # (masked_lm_loss), prediction_scores, (hidden_states), (attentions)
 
-
 @add_start_docstrings("""Bert Model with a `next sentence prediction (classification)` head on top. """,
-                      ALBERT_START_DOCSTRING, ALBERT_INPUTS_DOCSTRING)
-class AlbertForNextSentencePrediction(AlbertPreTrainedModel):
+    BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertForNextSentencePrediction(BertPreTrainedModel):
     r"""
         **next_sentence_label**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size,)``:
             Labels for computing the next sequence prediction (classification) loss. Input should be a sequence pair (see ``input_ids`` docstring)
@@ -827,11 +756,9 @@ class AlbertForNextSentencePrediction(AlbertPreTrainedModel):
     """
 
     def __init__(self, config):
-        super(AlbertForNextSentencePrediction, self).__init__(config)
-
-        self.bert = AlbertModel(config)
-        self.cls = AlbertOnlyNSPHead(config)
-
+        super(BertForNextSentencePrediction, self).__init__(config)
+        self.bert = BertModel(config)
+        self.cls = BertOnlyNSPHead(config)
         self.init_weights()
 
     def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
@@ -854,11 +781,10 @@ class AlbertForNextSentencePrediction(AlbertPreTrainedModel):
 
         return outputs  # (next_sentence_loss), seq_relationship_score, (hidden_states), (attentions)
 
-
 @add_start_docstrings("""Bert Model transformer with a sequence classification/regression head on top (a linear layer on top of
     the pooled output) e.g. for GLUE tasks. """,
-                      ALBERT_START_DOCSTRING, ALBERT_INPUTS_DOCSTRING)
-class AlbertForSequenceClassification(AlbertPreTrainedModel):
+    BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertForSequenceClassification(BertPreTrainedModel):
     r"""
         **labels**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size,)``:
             Labels for computing the sequence classification/regression loss.
@@ -887,23 +813,23 @@ class AlbertForSequenceClassification(AlbertPreTrainedModel):
     """
 
     def __init__(self, config):
-        super(AlbertForSequenceClassification, self).__init__(config)
+        super(BertForSequenceClassification, self).__init__(config)
         self.num_labels = config.num_labels
 
-        self.bert = AlbertModel(config)
-        self.dropout = nn.Dropout(0.1 if config.hidden_dropout_prob == 0 else config.hidden_dropout_prob)
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
 
         self.init_weights()
 
-    def forward(self, input_ids, attention_mask=None, type_ids=None,
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None,
                 position_ids=None, head_mask=None, labels=None):
 
         outputs = self.bert(input_ids,
                             attention_mask=attention_mask,
                             position_ids=position_ids,
                             head_mask=head_mask,
-                            type_ids=type_ids)
+                            token_type_ids=token_type_ids)
 
         pooled_output = outputs[1]
 
@@ -924,11 +850,10 @@ class AlbertForSequenceClassification(AlbertPreTrainedModel):
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
 
-
 @add_start_docstrings("""Bert Model with a multiple choice classification head on top (a linear layer on top of
     the pooled output and a softmax) e.g. for RocStories/SWAG tasks. """,
-                      ALBERT_START_DOCSTRING, ALBERT_INPUTS_DOCSTRING)
-class AlbertForMultipleChoice(AlbertPreTrainedModel):
+    BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertForMultipleChoice(BertPreTrainedModel):
     r"""
         **labels**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size,)``:
             Labels for computing the multiple choice classification loss.
@@ -956,12 +881,11 @@ class AlbertForMultipleChoice(AlbertPreTrainedModel):
         outputs = model(input_ids, labels=labels)
         loss, classification_scores = outputs[:2]
     """
-
     def __init__(self, config):
-        super(AlbertForMultipleChoice, self).__init__(config)
+        super(BertForMultipleChoice, self).__init__(config)
 
-        self.bert = AlbertModel(config)
-        self.dropout = nn.Dropout(0.1 if config.hidden_dropout_prob == 0 else config.hidden_dropout_prob)
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
 
         self.init_weights()
@@ -991,12 +915,10 @@ class AlbertForMultipleChoice(AlbertPreTrainedModel):
 
         return outputs  # (loss), reshaped_logits, (hidden_states), (attentions)
 
-
 @add_start_docstrings("""Bert Model with a token classification head on top (a linear layer on top of
     the hidden-states output) e.g. for Named-Entity-Recognition (NER) tasks. """,
-                      ALBERT_START_DOCSTRING, ALBERT_INPUTS_DOCSTRING)
-
-class AlbertForTokenClassification(AlbertPreTrainedModel):
+    BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertForTokenClassification(BertPreTrainedModel):
     r"""
         **labels**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size, sequence_length)``:
             Labels for computing the token classification loss.
@@ -1021,23 +943,22 @@ class AlbertForTokenClassification(AlbertPreTrainedModel):
         outputs = model(input_ids, labels=labels)
         loss, scores = outputs[:2]
     """
-
     def __init__(self, config):
-        super(AlbertForTokenClassification, self).__init__(config)
+        super(BertForTokenClassification, self).__init__(config)
         self.num_labels = config.num_labels
 
-        self.bert = AlbertModel(config)
-        self.dropout = nn.Dropout(0.1 if config.hidden_dropout_prob == 0 else config.hidden_dropout_prob)
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
         self.init_weights()
 
-    def forward(self, input_ids, attention_mask=None, type_ids=None,
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None,
                 position_ids=None, head_mask=None, labels=None):
 
         outputs = self.bert(input_ids,
                             attention_mask=attention_mask,
-                            type_ids=type_ids,
+                            token_type_ids=token_type_ids,
                             position_ids=position_ids,
                             head_mask=head_mask)
 
@@ -1063,11 +984,10 @@ class AlbertForTokenClassification(AlbertPreTrainedModel):
 
         return outputs  # (loss), scores, (hidden_states), (attentions)
 
-
 @add_start_docstrings("""Bert Model with a span classification head on top for extractive question-answering tasks like SQuAD (a linear layers on top of
     the hidden-states output to compute `span start logits` and `span end logits`). """,
-                      ALBERT_START_DOCSTRING, ALBERT_INPUTS_DOCSTRING)
-class AlbertForQuestionAnswering(AlbertPreTrainedModel):
+    BERT_START_DOCSTRING, BERT_INPUTS_DOCSTRING)
+class BertForQuestionAnswering(BertPreTrainedModel):
     r"""
         **start_positions**: (`optional`) ``torch.LongTensor`` of shape ``(batch_size,)``:
             Labels for position (index) of the start of the labelled span for computing the token classification loss.
@@ -1100,12 +1020,11 @@ class AlbertForQuestionAnswering(AlbertPreTrainedModel):
         outputs = model(input_ids, start_positions=start_positions, end_positions=end_positions)
         loss, start_scores, end_scores = outputs[:2]
     """
-
     def __init__(self, config):
-        super(AlbertForQuestionAnswering, self).__init__(config)
+        super(BertForQuestionAnswering, self).__init__(config)
         self.num_labels = config.num_labels
 
-        self.bert = AlbertModel(config)
+        self.bert = BertModel(config)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         self.init_weights()

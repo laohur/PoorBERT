@@ -158,7 +158,6 @@ def collate_fn(batch):
     # return (torch.Tensor(x) for x in (all_input_ids, all_attention_mask, all_labels))
     return (torch.LongTensor(all_input_ids) , torch.LongTensor(all_attention_mask), torch.LongTensor(type_ids), torch.LongTensor(all_labels))
 
-# class TaskConfig(NamedTuple):
 class TaskConfig:
     """ Hyperparameters for training """
     # seed: int = 42 # random seed
@@ -169,18 +168,19 @@ class TaskConfig:
     model_config_path=""
     vocab_file="config/vocab.txt"
     bujian_file="config/bujian.txt"
+    noise=0
     batch_size: int = 50
     gradient_accumlengthulation_steps=1
     max_len=256
     learning_rate = 5e-5 # learning rate
-    n_epochs: int = 1 # the number of epoch
+    n_epochs: int = 5 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
     warmup_proportion: float = 0.1
-    logging_steps:int=25
-    save_steps: int = 50 # interval for saving model
+    logging_steps:int=10
+    save_steps: int = 10 # interval for saving model
     # total_steps: int = 100000 # total number of steps to train
-    max_seq_length=256
+    # max_seq_length=256
     data_dir=""
     output_dir=""
     local_rank=-1
@@ -189,8 +189,11 @@ class TaskConfig:
     eval_all_checkpoints=0.0
     adam_epsilon=1e-6
     max_grad_norm=1.0
-    weight_decay=0
-    num_workers=6
+    weight_decay=0.01
+
+    pin_memory = True
+    num_workers=0
+    timeout=1
     no_cuda=False
     n_gpu=1
     fp16=False
@@ -199,6 +202,7 @@ class TaskConfig:
     train_file="train.txt"
     valid_file="valid.txt"
     test_file="test.txt"
+    output_submit_file=""
     TaskDataset=None
     labels= ["0", "1"]
     # def __init__(self,**kwargs):-
@@ -208,7 +212,7 @@ class TaskConfig:
         for k,v in dic.items():
             setattr(self,k,v)
 
-        model_dir='/media/u/t1/dataset/Poor_none/'
+        model_dir='/media/u/t1/dataset/Poor_all/'
         pretrained = model_dir+"pretrained/"
         data_dir = '/media/u/t1/dataset/CLUEdatasets/'
         dic2={
@@ -228,7 +232,10 @@ class TaskConfig:
         submit_dir=model_dir + f"clue_submit"
         if not os.path.exists(submit_dir):
             os.makedirs(submit_dir)
-        self.output_submit_file = os.path.join(submit_dir, f"{self.task_name}_prediction.json")
+        prefix=self.task_name
+        if "cmrc" in prefix:
+            prefix="cmrc2018"
+        self.output_submit_file = os.path.join(submit_dir, f"{prefix}_prediction.json")
 
     @classmethod
     def from_dict(cls, dic): # load config from json

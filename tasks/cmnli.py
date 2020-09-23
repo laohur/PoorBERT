@@ -11,18 +11,12 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
 
-from callback.lr_scheduler import get_linear_schedule_with_warmup
-from callback.optimization.adamw import AdamW
 from callback.progressbar import ProgressBar
 from configs import Constants
-from model.configuration_albert import AlbertConfig
-from model.modeling_poor import AlbertForPreTraining, AlbertForSequenceClassification
-from model.tokenization_shang import ShangTokenizer, Sentence
 from tasks.utils import truncate_pair, TaskConfig, collate_fn, truncate_one
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
-# FORMAT = '%(pathname)s %(filename)s  %(funcName)s %(lineno)d %(asctime)-15s  %(message)s'
 FORMAT = ' %(filename)s %(lineno)d %(funcName)s %(asctime)-15s  %(message)s'
 logging.basicConfig(format=FORMAT,level=logging.INFO)
 
@@ -31,57 +25,10 @@ class Task(TaskPoor):
         super().__init__(config)
 
     def load_model(self, model_path ):
-        bert_config = AlbertConfig.from_pretrained(model_path,num_labels=len(self.labels),finetuning_task=self.task_name)
-        logger.info(f" loadding {model_path} ")
-        model = AlbertForSequenceClassification.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
-        model.to(self.config.device)
-        return model
-
+        return super().load_model_seq(model_path)
 
     def predict(self):
-        args=self.config
-        model=self.model
-        model.eval()
-        # dataset=self.valid_dataset
-        input_file=os.path.join(self.config.data_dir,self.config.test_file)
-        dataset = self.dataset(input_file=input_file, tokenizer=self.tokenizer,labels=self.labels, max_tokens=self.config.max_len,config=self.config)
-        # msg={ "n_examples": len(dataset),  }
-        # logger.info("  Num examples = %d", len(dataset))
-        sampler = SequentialSampler(dataset) if args.local_rank == -1 else DistributedSampler(dataset)
-        dataloader = DataLoader(dataset, sampler=sampler, batch_size=self.config.batch_size,collate_fn=collate_fn,num_workers=self.config.num_workers)
-
-        # Eval!
-        # logger.info("***** Running evaluation {} *****".format(self.task_name))
-        # logger.info("  Num examples = %d", len(dataset))
-        # logger.info("  Batch size = %d", args.batch_size)
-        eval_loss = 0.0
-        nb_eval_steps = 0
-        preds = None
-        out_label_ids = None
-        pbar = ProgressBar(n_total=len(dataloader), desc="Evaluating")
-        for step, batch in enumerate(dataloader):
-            batch = tuple(t.to(args.device) for t in batch)
-            with torch.no_grad():
-                input_ids, attention_mask,type_ids, label_ids = batch
-                inputs = {'input_ids': input_ids, 'attention_mask': attention_mask, "type_ids":type_ids,'labels': label_ids}
-                outputs = model(**inputs)
-                _, logits = outputs[:2]
-            nb_eval_steps += 1
-            if preds is None:
-                preds = logits.detach().cpu().numpy()
-                out_label_ids = inputs['labels'].detach().cpu().numpy()
-            else:
-                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-                out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-            pbar(step)
-        print(' ')
-        if 'cuda' in str(args.device):
-            torch.cuda.empty_cache()
-        if args.output_mode == "classification":
-            preds = np.argmax(preds, axis=1)
-        elif args.output_mode == "regression":
-            preds = np.squeeze(preds)
-
+        preds=self.infer()
         # output_logits_file = os.path.join(self.config.output_dir, "test_logits")
         # 保存标签结果
         label_map = {i: label for i, label in enumerate(self.labels)}
@@ -90,8 +37,7 @@ class Task(TaskPoor):
                 json_d = { "id":i, "label":str(label_map[pred])  }
                 writer.write(json.dumps(json_d) + '\n')
 
-        logger.info(f" test : {len(preds)}  examples ")
-        model.train()
+        logger.info(f" test : {len(preds)}  examples  --> {self.config.output_submit_file}")
 
 class TaskDataset(Dataset):
     def __init__(self,input_file,labels,tokenizer,max_tokens,config):
@@ -158,8 +104,8 @@ class TaskDataset(Dataset):
             a,b,l=self.doc[idx]
             if random.random()<0.5:
               a,b=b,a
-            senta = self.tokenizer.tokenize(a,noise=0.5)
-            sentb = self.tokenizer.tokenize(b,noise=0.5)
+            senta = self.tokenizer.tokenize(a,noise=self.config.noise)
+            sentb = self.tokenizer.tokenize(b,noise=self.config.noise)
             a,b=truncate_pair(senta,sentb,max_len=self.max_tokens-5)
             tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]
 
@@ -176,18 +122,10 @@ class TaskDataset(Dataset):
         tokens = self.tokenizer.convert_tokens_to_ids(tokens)
 
         input_mask=[1]*length+[0]*(self.max_tokens-length)
-        return  np.array(tokens) , np.array(input_mask) ,np.array(type_ids), length,label
+        return  (tokens) , (input_mask) ,(type_ids), length,label
 
 
 if __name__ == "__main__":
-    # from argparse import ArgumentParser
-    # parser = ArgumentParser()
-    # parser.add_argument('--model_name', default="none")
-    # args = parser.parse_args()
-    # model_name=args.model_name
-
-    # outputs = '/media/u/t1/dataset/Poor/outputs/'
-    # data_dir = '/media/u/t1/dataset/CLUEdatasets/'
     task_name="cmnli"
     description="句子推理判断"
     config = {
@@ -215,4 +153,4 @@ if __name__ == "__main__":
     # torch.multiprocessing.set_start_method('spawn')
     task=Task(config)
     task.train()
-    # task.predict()
+    task.predict()

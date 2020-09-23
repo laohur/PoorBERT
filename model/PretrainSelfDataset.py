@@ -1,27 +1,15 @@
 """Tokenization classes."""
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-import collections
-import os
-import sys
-import unicodedata
+from __future__ import (absolute_import, division, print_function,                      unicode_literals)
 import random
-import six
 import logging
-import sentencepiece as spm
 from torch.utils.data import Dataset
 import torch
 import numpy as np
-
-from callback.progressbar import ProgressBar
 from configs import Constants
-
-# logger = logging.getLogger(__name__)
 from model.tokenization_shang import Sentence
 
 logger = logging.getLogger(__name__)
-# FORMAT = '%(pathname)s %(filename)s  %(funcName)s %(lineno)d %(asctime)-15s  %(message)s'
 FORMAT = ' %(filename)s %(lineno)d %(funcName)s %(asctime)-15s  %(message)s'
 logging.basicConfig(format=FORMAT,level=logging.INFO)
 
@@ -78,12 +66,10 @@ class PretrainSelfDataset(Dataset):
     return (torch.LongTensor(all_input_ids), torch.LongTensor(all_attention_mask),torch.LongTensor(type_ids),torch.LongTensor(token_label), torch.LongTensor(relation_lable))
 
   def __getitem__(self, idx):
-    # if self.taskid==Constants.TASK_SELF:
     ( tokens,input_mask,type_ids,token_label,length,relation_lable ) =self.self_feature(idx)
 
-    # task_type_id = torch.tensor(tokens_tensor.shape).new_full(tokens_tensor.shape, Constants.TASK_EXPAND)
+    # return ( np.array(tokens),np.array(input_mask),np.array(type_ids),np.array(token_label),length,relation_lable  )
     return ( np.array(tokens),np.array(input_mask),np.array(type_ids),np.array(token_label),length,relation_lable  )
-
 
   def self_feature(self, idx):
     docid,lno=self.lineid2docid(idx)
