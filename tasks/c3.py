@@ -209,5 +209,5 @@ if __name__ == "__main__":
     # preprocess(taskConfig.data_dir)
 
     task=Task(config)
-    # task.train()
+    task.train()
     task.predict()

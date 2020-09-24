@@ -151,7 +151,7 @@ if __name__ == "__main__":
         "max_len": 256,
         "batch_size":50,
         "n_epochs":50,
-        "num_workers":0,
+        # "num_workers":0,
         # "learning_rate": 10e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,

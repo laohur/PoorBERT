@@ -1,4 +1,10 @@
-*/__pycache__
+datasets/
+outputs/
+pre_trained_model/
+__pycache__/
+
+*__pycache__*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -102,3 +108,4 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+.idea/

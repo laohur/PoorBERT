@@ -172,8 +172,8 @@ class TaskConfig:
     batch_size: int = 50
     gradient_accumlengthulation_steps=1
     max_len=256
-    learning_rate = 5e-5 # learning rate
-    n_epochs: int = 5 # the number of epoch
+    learning_rate = 3e-5 # learning rate
+    n_epochs: int = 10 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
     warmup_proportion: float = 0.1

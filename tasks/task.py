@@ -208,7 +208,7 @@ class TaskPoor:
         line=json.dumps(result,ensure_ascii=False)
         with open(output_eval_file, "a") as writer:
             writer.write(line)
-        logger.info(f" valid : {line} ")
+        logger.info(f"\n valid : {line} ")
         # for key in sorted(result.keys()):
         #     logger.info(" dev: %s = %s", key, str(result[key]))
         model.train()
@@ -216,8 +216,9 @@ class TaskPoor:
 
     def infer(self):
         args=self.config
-        # model= self.load_model(self.config.output_dir)
-        model=self.model
+        model= self.load_model(self.config.output_dir)
+        logger.info(f"selected best model acc:{self.acc}")
+        # model=self.model
         model.eval()
         # dataset=self.valid_dataset
         input_file=os.path.join(self.config.data_dir,self.config.test_file)
