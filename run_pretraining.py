@@ -458,23 +458,12 @@ if __name__ == '__main__':
 # if __name__ == '__main__':
     # main()
 '''
- python3  run_pretraining.py | tee pretrain.log
+ python3  run_pretraining.py  
 
-626 files ->100
-14g->2.2g
-
-self 1.2g
-tokened zhwiki    1.5g
-qa baike_qa  0.75g  150w 1.5e6
-total 2g   6h
-
-1351files 33g  4d
-
-expr1
 none  
-all bujian      
-all gradation  
-all sentRelation
-all bujian gradation sentRelation
+bujian      
+gradation  
+sentRelation
+all 
 
 '''

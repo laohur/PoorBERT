@@ -16,6 +16,6 @@ if __name__ == "__main__":
     run_all()
 
 '''
-python3  run_tasks.py | tee tasks.log
+python3  run_tasks.py 
 
 '''

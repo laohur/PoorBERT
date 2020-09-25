@@ -207,7 +207,7 @@ class TaskPoor:
         output_eval_file = os.path.join(args.output_dir, "checkpoint_eval_results.txt")
         line=json.dumps(result,ensure_ascii=False)
         with open(output_eval_file, "a") as writer:
-            writer.write(line)
+            writer.write(line+"\n")
         logger.info(f"\n valid : {line} ")
         # for key in sorted(result.keys()):
         #     logger.info(" dev: %s = %s", key, str(result[key]))
