@@ -25,106 +25,114 @@ from model.PretrainTokenedDataset import PretrainTokenedDataset
 from model.tokenization_shang import ShangTokenizer
 from tools.common import logger, init_logger
 
-def train_tokened(model,tokenizer,file_path,config):
-    start_time = time.time()
-    t0=time.time()
-    epoch_dataset = PretrainTokenedDataset(input_file=file_path,tokenizer=tokenizer,task='self',max_tokens=config.max_len)
-    if config.local_rank == -1:
-        train_sampler = RandomSampler(epoch_dataset)
+def train_tokened(model,batch,config):
+    input_ids, attention_mask,token_type_ids, lm_label_ids, char_label_ids, word_label_ids,relation_ids = batch
+    tasks=[Constants.SCORE_CHAR,Constants.SCORE_WORD,Constants.SCORE_MASK,Constants.SCORE_RELATION ]
+    outputs, scores= model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask,tasks=tasks)
+    prediction_scores,  char_score, word_score,seq_relationship_score = scores[Constants.SCORE_MASK],scores[Constants.SCORE_CHAR],scores[Constants.SCORE_WORD],scores[Constants.SCORE_RELATION]
+
+    masked_lm_loss0 = loss_fct(prediction_scores[0].reshape(-1, bert_config.vocab_size), lm_label_ids.reshape(-1))
+    masked_lm_loss1 = loss_fct(prediction_scores[1].reshape(-1, bert_config.vocab_size), lm_label_ids.reshape(-1))
+    char_struct_loss = loss_fct(char_score.view(-1, 2), char_label_ids.reshape(-1))
+    word_struct_loss = loss_fct(word_score.view(-1, 2), word_label_ids.reshape(-1))
+    sentence_relation_loss0 = loss_fct(seq_relationship_score[0].view(-1, 5), relation_ids.view(-1))
+    sentence_relation_loss1 = loss_fct(seq_relationship_score[1].view(-1, 5), relation_ids.view(-1))
+    loss = 2*masked_lm_loss0+masked_lm_loss1 + char_struct_loss + word_struct_loss + 2*sentence_relation_loss0+sentence_relation_loss1   # bert
+
+    if config.n_gpu > 1:
+        loss = loss.mean()  # mean() to average on multi-gpu.
+    if config.gradient_accumulation_steps > 1:
+        loss = loss / config.gradient_accumulation_steps
+    if config.fp16:
+        scaler.scale(loss).backward()
     else:
-        train_sampler = DistributedSampler(epoch_dataset)
-    train_dataloader = DataLoader(epoch_dataset, sampler=train_sampler,collate_fn=epoch_dataset.collate_fn, batch_size=config.train_batch_size,num_workers=config.num_workers,timeout=config.timeout,pin_memory=config.pin_memory)
+        loss.backward()
 
-    model.train()
-    pbar = ProgressBar(n_total=len(train_dataloader), desc=f"tokened {file_path[-20:]}")
-    msg={}
-    for step, batch in enumerate(train_dataloader):
-        batch = tuple(t.to(device) for t in batch)
-        input_ids, attention_mask,token_type_ids, lm_label_ids, char_label_ids, word_label_ids,relation_ids = batch
-        tasks=[Constants.SCORE_CHAR,Constants.SCORE_WORD,Constants.SCORE_MASK,Constants.SCORE_RELATION ]
-        outputs, scores= model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask,tasks=tasks)
-        prediction_scores,  char_score, word_score,seq_relationship_score = scores[Constants.SCORE_MASK],scores[Constants.SCORE_CHAR],scores[Constants.SCORE_WORD],scores[Constants.SCORE_RELATION]
+    with torch.no_grad():
+        mask_metric(logits=prediction_scores[0].reshape(-1, bert_config.vocab_size), target=lm_label_ids.reshape(-1))
+        sop_metric(logits=seq_relationship_score[0].reshape(-1, 5), target=relation_ids.reshape(-1))
+        loss_batch=[loss,masked_lm_loss0,masked_lm_loss1 , sentence_relation_loss0,sentence_relation_loss1, char_struct_loss , word_struct_loss ]
+        loss_batch=[ x.item() for x in loss_batch ]
 
-        masked_lm_loss0 = loss_fct(prediction_scores[0].reshape(-1, bert_config.vocab_size), lm_label_ids.reshape(-1))
-        masked_lm_loss1 = loss_fct(prediction_scores[1].reshape(-1, bert_config.vocab_size), lm_label_ids.reshape(-1))
-        char_struct_loss = loss_fct(char_score.view(-1, 2), char_label_ids.reshape(-1))
-        word_struct_loss = loss_fct(word_score.view(-1, 2), word_label_ids.reshape(-1))
-        sentence_relation_loss0 = loss_fct(seq_relationship_score[0].view(-1, 5), relation_ids.view(-1))
-        sentence_relation_loss1 = loss_fct(seq_relationship_score[1].view(-1, 5), relation_ids.view(-1))
-        loss = 2*masked_lm_loss0+masked_lm_loss1 + char_struct_loss + word_struct_loss + 2*sentence_relation_loss0+sentence_relation_loss1   # bert
-
-        if config.n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu.
-        if config.gradient_accumulation_steps > 1:
-            loss = loss / config.gradient_accumulation_steps
-        if config.fp16:
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
-
-        with torch.no_grad():
-            mask_metric(logits=prediction_scores[0].reshape(-1, bert_config.vocab_size), target=lm_label_ids.reshape(-1))
-            sop_metric(logits=seq_relationship_score[0].reshape(-1, 5), target=relation_ids.reshape(-1))
-            loss_batch=[loss,masked_lm_loss0,masked_lm_loss1 , sentence_relation_loss0,sentence_relation_loss1, char_struct_loss , word_struct_loss ]
-            loss_batch=[ x.item() for x in loss_batch ]
-
-        msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'字':loss_batch[5],'词':loss_batch[6],'len':batch[0].shape[1]}
-        pbar(step, msg )
-        start_time=train_after(step, start_time,tokenizer,len(batch),msg,len(train_dataloader),config)
-    msg['file'] = file_path
+    msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'字':loss_batch[5],'词':loss_batch[6],'len':batch[0].shape[1]}
     return msg
 
-def train_self(model,tokenizer,file_path,config):
-    start_time = time.time()
-    t0=time.time()
-    epoch_dataset = PretrainSelfDataset(input_file=file_path,tokenizer=tokenizer,task='self',max_tokens=config.max_len)
-    if config.local_rank == -1:
-        train_sampler = RandomSampler(epoch_dataset)
+def train_self(model,batch,config):
+    input_ids, attention_mask,token_type_ids, lm_label_ids,relation_ids = batch
+    tasks=[Constants.SCORE_MASK,Constants.SCORE_RELATION ]
+    outputs, scores= model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask,tasks=tasks)
+    prediction_scores,seq_relationship_score = scores[Constants.SCORE_MASK],scores[Constants.SCORE_RELATION]
+
+    masked_lm_loss0 = loss_fct(prediction_scores[0].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
+    masked_lm_loss1 = loss_fct(prediction_scores[1].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
+    sentence_relation_loss0 = loss_fct(seq_relationship_score[0].view(-1, 5), relation_ids.view(-1))
+    sentence_relation_loss1 = loss_fct(seq_relationship_score[1].view(-1, 5), relation_ids.view(-1))
+    loss = 2*masked_lm_loss0+masked_lm_loss1 + 2*sentence_relation_loss0+sentence_relation_loss1
+
+    if config.n_gpu > 1:
+        loss = loss.mean()  # mean() to average on multi-gpu.
+    if config.gradient_accumulation_steps > 1:
+        loss = loss / config.gradient_accumulation_steps
+    if config.fp16:
+        scaler.scale(loss).backward()
     else:
-        train_sampler = DistributedSampler(epoch_dataset)
-    train_dataloader = DataLoader(epoch_dataset, sampler=train_sampler,collate_fn=epoch_dataset.collate_fn, batch_size=config.train_batch_size,num_workers=config.num_workers,timeout=config.timeout,pin_memory=config.pin_memory)
+        loss.backward()
 
-    model.train()
-    msg={}
-    pbar = ProgressBar(n_total=len(train_dataloader), desc=f"self pretrain {file_path[-20:]}")
-    for step, batch in enumerate(train_dataloader):
-        batch = tuple(t.to(device) for t in batch)
-        input_ids, attention_mask,token_type_ids, lm_label_ids,relation_ids = batch
-        tasks=[Constants.SCORE_MASK,Constants.SCORE_RELATION ]
-        outputs, scores= model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask,tasks=tasks)
-        prediction_scores,seq_relationship_score = scores[Constants.SCORE_MASK],scores[Constants.SCORE_RELATION]
+    with torch.no_grad():
+        mask_metric(logits=prediction_scores[0].view(-1, bert_config.vocab_size), target=lm_label_ids.view(-1))
+        sop_metric(logits=seq_relationship_score[0].view(-1, 5), target=relation_ids.view(-1))
+        loss_batch = [loss,masked_lm_loss0, masked_lm_loss1,   sentence_relation_loss0, sentence_relation_loss1]
+        loss_batch = [x.item() for x in loss_batch]
 
-        masked_lm_loss0 = loss_fct(prediction_scores[0].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
-        masked_lm_loss1 = loss_fct(prediction_scores[1].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
-        sentence_relation_loss0 = loss_fct(seq_relationship_score[0].view(-1, 5), relation_ids.view(-1))
-        sentence_relation_loss1 = loss_fct(seq_relationship_score[1].view(-1, 5), relation_ids.view(-1))
-        loss = 2*masked_lm_loss0+masked_lm_loss1 + 2*sentence_relation_loss0+sentence_relation_loss1
-
-        if config.n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu.
-        if config.gradient_accumulation_steps > 1:
-            loss = loss / config.gradient_accumulation_steps
-        if config.fp16:
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
-
-        with torch.no_grad():
-            mask_metric(logits=prediction_scores[0].view(-1, bert_config.vocab_size), target=lm_label_ids.view(-1))
-            sop_metric(logits=seq_relationship_score[0].view(-1, 5), target=relation_ids.view(-1))
-            loss_batch = [loss,masked_lm_loss0, masked_lm_loss1,   sentence_relation_loss0, sentence_relation_loss1]
-            loss_batch = [x.item() for x in loss_batch]
-
-        msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'len':batch[0].shape[1]}
-        pbar(step, msg )
-        start_time=train_after(step, start_time,tokenizer,len(batch),msg,len(train_dataloader),config)
-    msg['file'] = file_path
+    msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'len':batch[0].shape[1]}
     return msg
 
-def train_qa(model,tokenizer,file_path,config):
+def train_qa(model,batch,config):
+    input_ids, input_mask,token_type_ids,lm_label_ids, fake_ids = batch
+    tasks=[ Constants.SCORE_MASK,Constants.SCORE_QA ]
+    outputs, scores= model(input_ids=input_ids,token_type_ids=token_type_ids,attention_mask=input_mask,tasks=tasks)
+    prediction_scores,qa_score = scores[Constants.SCORE_MASK],scores[Constants.SCORE_QA]
+
+    masked_lm_loss0 = loss_fct(prediction_scores[0].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
+    masked_lm_loss1 = loss_fct(prediction_scores[1].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
+    qa_loss0 = loss_fct(qa_score[0].view(-1, 2), fake_ids.view(-1))
+    qa_loss1 = loss_fct(qa_score[1].view(-1, 2), fake_ids.view(-1))
+    loss = 2*masked_lm_loss0+masked_lm_loss1 + 2*qa_loss0+qa_loss1
+
+    if config.n_gpu > 1:
+        loss = loss.mean()  # mean() to average on multi-gpu.
+    if config.gradient_accumulation_steps > 1:
+        loss = loss / config.gradient_accumulation_steps
+    if config.fp16:
+        scaler.scale(loss).backward()
+    else:
+        loss.backward()
+
+    with torch.no_grad():
+        mask_metric(logits=prediction_scores[0].view(-1, bert_config.vocab_size), target=lm_label_ids.view(-1))
+        sop_metric(logits=qa_score[0].view(-1, 2), target=fake_ids.view(-1))
+        loss_batch = [loss,masked_lm_loss0, masked_lm_loss1,   qa_loss0, qa_loss1]
+        loss_batch = [x.item() for x in loss_batch]
+
+    msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'len':batch[0].shape[1]}
+    return msg
+
+def train(model,tokenizer,file_path,config):
+    if "tokened" in file_path:
+        train_epoch=train_tokened
+        tag="tokened"
+        epoch_dataset = PretrainTokenedDataset(input_file=file_path, tokenizer=tokenizer, task='self', max_tokens=config.max_len)
+    elif "self" in file_path:
+        train_epoch=train_self
+        tag="self"
+        epoch_dataset = PretrainSelfDataset(input_file=file_path, tokenizer=tokenizer, task='self', max_tokens=config.max_len)
+    elif "qa" in file_path:
+        train_epoch=train_qa
+        tag="qa"
+        epoch_dataset = PretrainQaDataset(input_file=file_path,tokenizer=tokenizer,max_tokens=config.max_len)
+
     start_time = time.time()
-    t0=time.time()
-    epoch_dataset = PretrainQaDataset(input_file=file_path,tokenizer=tokenizer,max_tokens=config.max_len)
+    t0 = time.time()
     if config.local_rank == -1:
         train_sampler = RandomSampler(epoch_dataset)
     else:
@@ -133,38 +141,18 @@ def train_qa(model,tokenizer,file_path,config):
 
     model.train()
     msg={}
-    pbar = ProgressBar(n_total=len(train_dataloader), desc=f"qa pretrain {file_path}")
+    pbar = ProgressBar(n_total=len(train_dataloader), desc=f"{tag} pretrain {file_path[-20:]}")
     for step, batch in enumerate(train_dataloader):
-        batch = tuple(t.to(device) for t in batch)
-        input_ids, input_mask,token_type_ids,lm_label_ids, fake_ids = batch
-        tasks=[ Constants.SCORE_MASK,Constants.SCORE_QA ]
-        outputs, scores= model(input_ids=input_ids,token_type_ids=token_type_ids,attention_mask=input_mask,tasks=tasks)
-        prediction_scores,qa_score = scores[Constants.SCORE_MASK],scores[Constants.SCORE_QA]
-
-        masked_lm_loss0 = loss_fct(prediction_scores[0].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
-        masked_lm_loss1 = loss_fct(prediction_scores[1].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
-        qa_loss0 = loss_fct(qa_score[0].view(-1, 2), fake_ids.view(-1))
-        qa_loss1 = loss_fct(qa_score[1].view(-1, 2), fake_ids.view(-1))
-        loss = 2*masked_lm_loss0+masked_lm_loss1 + 2*qa_loss0+qa_loss1
-
-        if config.n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu.
-        if config.gradient_accumulation_steps > 1:
-            loss = loss / config.gradient_accumulation_steps
-        if config.fp16:
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
-
-        with torch.no_grad():
-            mask_metric(logits=prediction_scores[0].view(-1, bert_config.vocab_size), target=lm_label_ids.view(-1))
-            sop_metric(logits=qa_score[0].view(-1, 2), target=fake_ids.view(-1))
-            loss_batch = [loss,masked_lm_loss0, masked_lm_loss1,   qa_loss0, qa_loss1]
-            loss_batch = [x.item() for x in loss_batch]
-
-        msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'len':batch[0].shape[1]}
-        pbar(step, msg)
-        start_time=train_after(step, start_time,tokenizer,len(batch),msg,len(train_dataloader),config)
+        try:
+            batch = tuple(t.to(device) for t in batch)
+            msg = train_epoch(model, batch, config)
+            pbar(step, msg)
+            start_time=train_after(step, start_time,tokenizer,len(batch),msg,len(train_dataloader),config)
+        except Exception as e:
+            gc.collect()
+            torch.cuda.empty_cache()
+            # e = traceback.format_exc()
+            print(f"argconfigs.max_len:{config.max_len} config.train_batch_size:{config.train_batch_size}  error:{e} \n")
     msg['file'] = file_path
     return msg
 
@@ -285,13 +273,13 @@ class PretrainConfig:
 
 if __name__ == '__main__':
     BASE_DIR = Path('.')
-    OUTPUTS_DIR = Path('/media/u/t1/dataset/Poor_all') / 'pretrained'
+    OUTPUTS_DIR = Path('/media/u/t1/dataset/PoorBERT') / 'pretrained'
     config_dict = {
         'outputs': OUTPUTS_DIR,
         'figure_dir': OUTPUTS_DIR / "figure",
         'checkpoint_dir': OUTPUTS_DIR,
-        'bert_config_path': BASE_DIR / 'configs/poor_config.json',
-        'vocab_path': BASE_DIR / 'configs/vocab.txt'
+        'bert_config_path': 'configs/poorbert_config.json',
+        'vocab_path':  'configs/vocab.txt'
     }
     config = PretrainConfig(config_dict)
 
@@ -373,6 +361,9 @@ if __name__ == '__main__':
     logger.info(f"  Num steps = {num_train_optimization_steps}")
     logger.info(f"  warmup_steps = {config.warmup_steps}")
 
+    with open(trained_log) as f:
+        trained_logs=f.readlines()
+
     tokenizer = ShangTokenizer(vocab_path=config.vocab_path, bujian_path=config.bujian_path)
     for epoch in range(config.epochs):
         files=[]
@@ -386,11 +377,10 @@ if __name__ == '__main__':
         for fid,file_path in enumerate(files):
             file_path=str(file_path)
             trained=False
-            with open(trained_log) as f:
-                for line in f.readlines():
-                    if file_path in line:
-                        trained=True
-                        break
+            for line in trained_logs:
+                if file_path in line:
+                    trained=True
+                    break
             if trained:
                 logger.info(f" {file_path}  already trained")
                 continue
@@ -401,15 +391,16 @@ if __name__ == '__main__':
             probs=[0.1,0.2,0.4,0.7,0.9,2]
             lens=[1024,512,256,128,64,32]
             # sizes=[6,16,40,100,210,430]
-            sizes=[7,20,49,108,230,480]
-            gradient_accumulation_steps=[16,12,8,4,2,1]
+            sizes=[7,19,44,99,208,432]
+            # gradient_accumulation_steps=[16,12,8,4,2,1]
             for i ,p in enumerate(probs):
+                # i=5
                 if rand<p:
                     config.max_len = lens[i]
                     config.train_batch_size = sizes[i]
-                    config.gradient_accumulation_steps=gradient_accumulation_steps[i]
+                    # config.gradient_accumulation_steps=gradient_accumulation_steps[i]
                     break
-            # config.train_batch_size = int(config.train_batch_size * 0.75)
+            config.train_batch_size = int(config.train_batch_size * 1)
 
             t0=time.time()
             logger.info(f" fid {fid} folder {len(files)}  max_len {config.max_len} batch_size {config.train_batch_size} gradient_accumulation_steps {config.gradient_accumulation_steps}")
@@ -417,41 +408,12 @@ if __name__ == '__main__':
             trace=""
             gc.collect()
             torch.cuda.empty_cache()
-            if "tokened" in file_path:
-                try:
-                    trace=train_tokened(model,tokenizer,file_path,config)
-                except Exception as e:
-                    try:
-                        torch.cuda.empty_cache()
-                        config.train_batch_size =int(config.train_batch_size*0.9)
-                        trace=train_tokened(model,tokenizer,file_path,config)
-                    except Exception as e:
-                        e=traceback.format_exc()
-                        print(f"argconfigs.max_len:{config.max_len} config.train_batch_size:{config.train_batch_size}  error:{e} \n")
-
-            elif "self" in file_path:
-                trace=train_self(model,tokenizer,file_path,config)
-            elif "qa" in file_path:
-                try:
-                    trace=train_qa(model,tokenizer,file_path,config)
-                except Exception as e:
-                    try:
-                        torch.cuda.empty_cache()
-                        config.train_batch_size =int(config.train_batch_size*0.9)
-                        trace=train_qa(model,tokenizer,file_path,config)
-                    except Exception as e:
-                        e=traceback.format_exc()
-                        print(f"config.max_len:{config.max_len} config.train_batch_size:{config.train_batch_size}  error:{e} \n")
-            torch.cuda.empty_cache()
+            trace=train(model,tokenizer,file_path,config)
             cost = time.time() - t0
             logger.info(f"  fid{fid} {file_path} trainned {cost}s ")
-
-            if trace:
-                msg["success"] = trace
-                with open(trained_log,"a") as f:
-                    now=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-                    f.write(f"time:{now} \t cost:{cost} \t file:{file_path} \t  trained \n")
-
+            with open(trained_log,"a") as f:
+                now=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                f.write(f"time:{now} \t cost:{cost} \t file:{file_path} \t  trained \n")
             logger.info(json.dumps(msg,ensure_ascii=False))
         logger.info(f"trained {len(files)} files")
 

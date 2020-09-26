@@ -13,7 +13,7 @@ from torch.utils.data import Dataset, DistributedSampler, DataLoader, Sequential
 
 from callback.progressbar import ProgressBar
 from configs import Constants
-from tasks.utils import truncate_pair, TaskConfig, collate_fn, truncate_one
+from tasks.utils import truncate_pair, TaskConfig, truncate_one
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -24,8 +24,8 @@ class Task(TaskPoor):
     def __init__(self,config):
         super().__init__(config)
 
-    def load_model(self, model_path ):
-        return super().load_model_seq(model_path)
+    # def load_model(self, model_path ):
+    #     return super().load_model_seq(model_path)
 
     def predict(self):
         preds=self.infer()
@@ -137,8 +137,8 @@ if __name__ == "__main__":
         # "bujian_file": outputs + f"{model_name}/bujian.txt",
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
-        "max_len": 256,
-        "batch_size":50,
+        # "max_len": 256,
+        # "batch_size":50,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,

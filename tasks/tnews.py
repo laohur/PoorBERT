@@ -6,14 +6,9 @@ import json
 import logging
 import os
 import random
-
-import numpy as np
-import torch
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
-
-from callback.progressbar import ProgressBar
 from configs import Constants
-from tasks.utils import truncate_pair, TaskConfig, collate_fn, truncate_one
+from tasks.utils import truncate_pair, TaskConfig, truncate_one
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -24,9 +19,8 @@ class Task(TaskPoor):
     def __init__(self,config):
         super().__init__(config)
 
-    def load_model(self, model_path ):
-        return super().load_model_seq(model_path)
-
+    # def load_model(self, model_path ):
+    #     return super().load_model_seq(model_path)
 
     def predict(self):
         preds=self.infer()
@@ -69,15 +63,14 @@ class TaskDataset(Dataset):
         lens=[]
         for line in doc0:
             item=json.loads(line.strip())
-            # a=item["sentence"]
-            a, b=item["sentence"],item["keywords"]
+            a=item["sentence"]
+            # b=""
+            b=item["keywords"]
             # keywords=b.split(",")
             # keywords=np.random.choice(keywords,len(keywords)-1)
             # b="|".join(keywords)
+            # l=item.get("label",self.labels[0])
             l=item.get("label",self.labels[0])
-            if l not in self.labels:
-                logger.warn(f" error label {line} ")
-                continue
             a, b, l = a.strip(), b.strip(), l.strip()
             doc.append([a,b,l])
             label_prob[l] = label_prob.get(l, 0) + 1
@@ -108,11 +101,6 @@ class TaskDataset(Dataset):
         return self.total_lines
 
     def __getitem__(self, idx):
-        if len(self.doc[idx])==-2:
-            a,l=self.doc[idx]
-            senta = self.tokenizer.tokenize(a)
-            a=truncate_one(senta,max_len=self.max_tokens-3)
-            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS]
         if self.config.task_name=="tnews":
             a,b,l=self.doc[idx]
             # if random.random()<0.5:
@@ -148,7 +136,7 @@ if __name__ == "__main__":
         labels.append(str(100 + i))
 
     config = {
-        "model_type": "albert",
+        # "model_type": "albert",
         # "model_name_or_path": outputs + model_name,
         "task_name": task_name,
         # "data_dir": data_dir + task_name,
@@ -156,8 +144,8 @@ if __name__ == "__main__":
         # "bujian_file": outputs + f"{model_name}/bujian.txt",
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
-        "max_len": 256,
-        "batch_size":50,
+        # "max_len": 256,
+        # "batch_size":50,
         # "learning_rate": 5e-4,
         # "n_epochs":  5, # the number of epoch,
         # "logging_steps": 100,

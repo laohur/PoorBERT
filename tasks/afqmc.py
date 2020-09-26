@@ -1,19 +1,12 @@
 import sys
-
 sys.path.append("..")
 sys.path.append(".")
 import json
 import logging
-import os
 import random
-
-import numpy as np
-import torch
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler
-
-from callback.progressbar import ProgressBar
 from configs import Constants
-from tasks.utils import truncate_pair, collate_fn
+from tasks.utils import truncate_pair
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -24,8 +17,8 @@ class Task(TaskPoor):
     def __init__(self,config):
         super().__init__(config)
 
-    def load_model(self, model_path ):
-        return super().load_model_seq(model_path)
+    # def load_model(self, model_path ):
+    #     return super().load_model_seq(model_path)
 
     def predict(self):
         preds=self.infer()
@@ -116,7 +109,6 @@ class TaskDataset(Dataset):
             if c in [Constants.TOKEN_EOS]:
                 k += 1
         tokens = self.tokenizer.convert_tokens_to_ids(tokens)
-
         input_mask=[1]*length+[0]*(self.max_tokens-length)
         return  (tokens), (input_mask) ,(type_ids) , length,label
 
@@ -142,8 +134,8 @@ if __name__ == "__main__":
         # "bujian_file": outputs + f"{model_name}/bujian.txt",
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
-        "max_len": 256,
-        "batch_size":50,
+        # "max_len": 256,
+        # "batch_size":50,
         # "learning_rate": 0.9e-5,
         # "n_epochs": 10,
         # "logging_steps": 100,

@@ -12,7 +12,7 @@ from torch.utils.data import Dataset, DistributedSampler, DataLoader, Sequential
 
 from callback.progressbar import ProgressBar
 from configs import Constants
-from tasks.utils import truncate_pair, TaskConfig, collate_fn, truncate_one
+from tasks.utils import truncate_pair, TaskConfig, truncate_one
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -23,9 +23,8 @@ class Task(TaskPoor):
     def __init__(self,config):
         super().__init__(config)
 
-    def load_model(self, model_path ):
-        return super().load_model_seq(model_path)
-
+    # def load_model(self, model_path ):
+    #     return super().load_model_seq(model_path)
 
     def predict(self):
 
@@ -131,15 +130,15 @@ if __name__ == "__main__":
     description="论文关键词识别 "
     labels =  ["0", "1"]
     config = {
-        "model_type": "albert",
+        # "model_type": "albert",
         # "model_name_or_path": outputs + model_name,
         "task_name": task_name,
         # "data_dir": data_dir + task_name,
         # "vocab_file": outputs + f"{model_name}/vocab.txt",
         # "bujian_file": outputs + f"{model_name}/bujian.txt",
         # "model_config_path": outputs + f"{model_name}/config.json",
-        "max_len": 1024,
-        "batch_size":8,
+        # "max_len": 1024,
+        # "batch_size":8,
         # "output_dir": outputs + f"{model_name}/task_output",
         # "learning_rate": 5e-5,
         # "logging_steps": 100,

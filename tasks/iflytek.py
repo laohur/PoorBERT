@@ -5,14 +5,9 @@ import json
 import logging
 import os
 import random
-
-import numpy as np
-import torch
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
-
-from callback.progressbar import ProgressBar
 from configs import Constants
-from tasks.utils import truncate_pair, TaskConfig, collate_fn, truncate_one
+from tasks.utils import truncate_pair, TaskConfig, truncate_one
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -23,8 +18,8 @@ class Task(TaskPoor):
     def __init__(self,config):
         super().__init__(config)
 
-    def load_model(self, model_path ):
-        return super().load_model_seq(model_path)
+    # def load_model(self, model_path ):
+    #     return super().load_model_seq(model_path)
 
     def predict(self):
         preds=self.infer()
@@ -124,12 +119,10 @@ class TaskDataset(Dataset):
 
 
 if __name__ == "__main__":
-
     task_name="iflytek"
     description="长文本分类"
-
     lcqmc_config = {
-        "model_type": "albert",
+        # "model_type": "albert",
         # "model_name_or_path": outputs + model_name,
         "task_name": task_name,
         # "data_dir": data_dir + task_name,
@@ -137,8 +130,8 @@ if __name__ == "__main__":
         # "bujian_file": outputs + f"{model_name}/bujian.txt",
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
-        "max_len": 1024,
-        "batch_size":8,
+        # "max_len": 1024,
+        # "batch_size":8,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,

@@ -6,7 +6,7 @@ import subprocess
 
 
 def run_all():
-    tasks=["afqmc",'c3','chid','cmnli','tnews','cmrc','csl','iflytek','wsc']
+    tasks=["afqmc",'tnews','iflytek','cmnli','wsc','csl',"cmrc",'cmrc2018','chid','c3']
     for i,task in enumerate(tasks):
         # cmd=f"  CUDA_VISIBLE_DEVICES={'0'} python3 tasks/{task}.py  --model_name none"
         cmd=f"  python3 tasks/{task}.py  "

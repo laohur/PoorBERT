@@ -10,7 +10,7 @@ def run_all():
         cmd=f" cd ~/work/Poor_{model} "
         subprocess.call(cmd,shell=True)
         print(f" cmd {cmd} ")
-        cmd=f" python3 run_tasks.py | tee {model}.log"
+        cmd=f" python3 run_tasks.py "
         print(f" cmd {cmd} ")
         subprocess.call(cmd,shell=True)
         print(f" model {model} finetuned")
@@ -19,9 +19,7 @@ if __name__ == "__main__":
     run_all()
 
 '''
- CUDA_VISIBLE_DEVICES="0"  python3  all_model.py | tee models.log
-
-
+ CUDA_VISIBLE_DEVICES="0"  python3  all_model.py 
 
 
 '''

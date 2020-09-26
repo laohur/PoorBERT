@@ -59,7 +59,7 @@ class ProgressBar(object):
                     line=f'{key}:{value}'
                 lines.append(line)
             # show_info = f'{show_bar} ' +  " ".join([f'{key}:{value:.5f}' for key, value in info.items()])
-            show_info = f'{show_bar} ' +  " ".join(lines)
+            show_info = f' {show_bar} ' +  " ".join(lines)+" "
             print(show_info, end='')
         else:
             print(show_bar, end='')

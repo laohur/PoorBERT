@@ -4,7 +4,6 @@ sys.path.append(".")
 import json
 import logging
 import os
-import numpy as np
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
 from configs import Constants
 from tasks.utils import truncate_pair, TaskConfig, truncate_one, index_of, find_span
@@ -27,8 +26,8 @@ class Task(TaskPoor):
         for i, pred in enumerate(preds):
             id, a, q, c = self.test_dataset.doc[i]
             context = self.tokenizer.tokenize(c)
-            # start, end = pred
-            start, end = find_span(pred)
+            start, end = pred
+            # start, end = find_span(pred)
             label = context[start - 2:end - 1]
             result[id]=''.join(label)
 
@@ -73,18 +72,18 @@ class TaskDataset(Dataset):
         if self.config.task_name=="cmrc2018":
             id, a, q, c =items
             [a,q,c]=[ self.tokenizer.tokenize(x) for x in (a,q,c) ]
-            # c, q = truncate_pair(c, q, max_len=self.max_tokens - 5)
             c=c[:self.max_tokens-len(q)-5]
 
             start=index_of(c,a)+2
+            end=start+len(a)-1
             q = [Constants.TOKEN_BOQ] + q + [Constants.TOKEN_EOQ]
             c = [Constants.TOKEN_BOC] + c + [Constants.TOKEN_EOC]
             tokens=[Constants.TOKEN_CLS]+c+q
             # start+=len(q)+2
-            label=[0]*(self.max_tokens)
-            for i in range(len(a)):
-                label[start+i]=1
-            label=np.array(label)
+            # label=[0]*(self.max_tokens)
+            # for i in range(len(a)):
+            #     label[start+i]=1
+            # label=np.array(label)
 
         # label=self.label2idx[l]
         length=len(tokens)
@@ -97,7 +96,7 @@ class TaskDataset(Dataset):
                 k += 1
         tokens = self.tokenizer.convert_tokens_to_ids(tokens)
         input_mask=[1]*length+[0]*(self.max_tokens-length)
-        return  tokens , input_mask, type_ids , length,label
+        return  tokens , input_mask, type_ids , length,start,end
 
 def preprocess0(src1,src2,target):
     with open(src1) as f:
@@ -147,7 +146,7 @@ if __name__ == "__main__":
     description="抽取式阅读理解"
     labels =  ["0", "1"]
     config = {
-        "output_mode": "span" ,
+        "output_mode": "qa" ,
         # "model_type": "albert",
         # "model_name_or_path": outputs + model_name,
         "task_name": task_name,
