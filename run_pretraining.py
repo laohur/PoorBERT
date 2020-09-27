@@ -391,7 +391,7 @@ if __name__ == '__main__':
             probs=[0.1,0.2,0.4,0.7,0.9,2]
             lens=[1024,512,256,128,64,32]
             # sizes=[6,16,40,100,210,430]
-            sizes=[7,19,44,99,208,432]
+            sizes=[7,19,44,98,208,432]
             # gradient_accumulation_steps=[16,12,8,4,2,1]
             for i ,p in enumerate(probs):
                 # i=5
@@ -408,12 +408,18 @@ if __name__ == '__main__':
             trace=""
             gc.collect()
             torch.cuda.empty_cache()
-            trace=train(model,tokenizer,file_path,config)
+            trace=""
+            try:
+                trace=train(model,tokenizer,file_path,config)
+            except Exception as e:
+                logger.error(f"{file_path} failed {e}")
             cost = time.time() - t0
-            logger.info(f"  fid{fid} {file_path} trainned {cost}s ")
-            with open(trained_log,"a") as f:
-                now=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-                f.write(f"time:{now} \t cost:{cost} \t file:{file_path} \t  trained \n")
+            logger.info(f"  fid{fid} {file_path} trainned {cost}s {trace}")
+            if trace:
+                msg["success"] = trace
+                with open(trained_log,"a") as f:
+                    now=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                    f.write(f"time:{now} \t cost:{cost} \t file:{file_path} \t  trained \n")
             logger.info(json.dumps(msg,ensure_ascii=False))
         logger.info(f"trained {len(files)} files")
 
