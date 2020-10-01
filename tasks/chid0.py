@@ -26,9 +26,16 @@ class Task(TaskPoor):
     def predict(self):
         preds=self.infer()
         result={}
-        for i in range(len(self.test_dataset)):
-            id, left, right, candidates, label= self.test_dataset.doc[i//self.config.n_class]
-            result[id]=preds[i]
+        for i,pred in enumerate(preds):
+        # for i,item in enumerate(self.test_dataset.doc):
+            id, idiom, left, right, candidates,label =self.test_dataset.doc[i]
+            if id not in result:
+                result[id]=0
+            if pred==1 : #True
+                for j in range(len(candidates)):
+                    if candidates[j]==idiom:
+                        label=j
+                        result[id]=label
 
         # label_map = {i: label for i, label in enumerate(self.labels)}
         with open(self.config.output_submit_file, "w") as writer:
@@ -59,18 +66,19 @@ class TaskDataset(Dataset):
         lens=[]
         for line in doc0:
             item=json.loads(line.strip())
-            id, answer, left, right, candidates= item["id"],item["answer"],item["left"],item["right"], item["candidates"]
-            if "train" in input_file:
-                random.shuffle(candidates)
-            label=0
-            for i in range(self.config.n_class):
-                if candidates[i]==answer:
-                    label=i
-                    break
-            doc.append([id, left, right, candidates,label ])
-            lens.append(len(left)+len(right)+len(candidates[label]))
+            # id,a,q,c=item['id'] ,item["answer"],item["question"],item["context"]
+            id, idiom, left, right, candidates, label = item["id"],item["idiom"],item["left"],item["right"], item["candidates"], item["label"]
+            doc.append([id, idiom, left, right, candidates,label ])
+            label_prob[label]=label_prob.get(label,0)+1
+            lens.append(len(left)+len(right))
         long=max(lens)  #602
         print(f" longest {long} ")
+        if "train" in input_file:
+            doc += self.rebanlance(doc, label_prob)
+        label_prob1 = {}
+        for item in doc:
+            label = item[-1]
+            label_prob1[label] = label_prob1.get(label, 0) + 1
         return doc
 
     def rebanlance(self, doc, label_prob):
@@ -85,15 +93,13 @@ class TaskDataset(Dataset):
         return expand
 
     def __len__(self):
-        return self.total_lines*self.config.n_class
+        return self.total_lines
 
     def __getitem__(self, idx):
-        i=idx//self.config.n_class
-        offset=idx%self.config.n_class
-        if self.config.task_name=="chid":
-            items = self.doc[i]
-            id, left, right, candidates,label=items
-            [ idiom, left, right]=[ self.tokenizer.tokenize(x) for x in ( candidates[offset], left, right) ]
+        items=self.doc[idx]
+        if self.config.task_name=="chid0":
+            id, idiom, left, right, candidates, label=items
+            [ idiom, left, right]=[ self.tokenizer.tokenize(x) for x in ( idiom, left, right) ]
             tokens=[Constants.TOKEN_CLS]+[Constants.TOKEN_BOS]+idiom+[Constants.TOKEN_EOS,Constants.TOKEN_BOS]+left+[Constants.TOKEN_MASK]*4+right+[Constants.TOKEN_EOS]
 
         length=len(tokens)
@@ -130,10 +136,16 @@ def preprocess0(src1,src2,target):
         for sent in content:
             segs=seg(sent)
             for k, v in segs.items():
-                answer = ""
+                real = ""
                 if src2:
-                    answer = candidates[ans[k]]
-            example={ "id":k,'answer':answer,"left":v[0],"right":v[1],"candidates":candidates}
+                    real = candidates[ans[k]]
+                for idiom in candidates:
+                    if idiom==real:
+                        label=1
+                    else:
+                        label=0
+
+            example={ "id":k,'label':label,"idiom":idiom,"left":v[0],"right":v[1],"candidates":candidates}
             doc.append(json.dumps(example,ensure_ascii=False))
 
     with open(target,"w") as f:
@@ -159,7 +171,7 @@ def preprocess(datadir):
 
 if __name__ == "__main__":
 
-    task_name="chid"
+    task_name="chid0"
     description="成语阅读理解填空"
     labels =  ["0", "1"]
     config = {
@@ -180,7 +192,6 @@ if __name__ == "__main__":
         "valid_file":"dev.txt",
         "test_file":"test.txt",
         "TaskDataset":TaskDataset,
-        "n_class": 10,
         "labels":labels
         # "per_gpu_train_batch_size": 16,
         # "per_gpu_eval_batch_size": 16,

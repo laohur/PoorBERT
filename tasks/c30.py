@@ -1,4 +1,5 @@
 import sys
+
 sys.path.append("..")
 sys.path.append(".")
 import json
@@ -7,7 +8,7 @@ import os
 import random
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
 from configs import Constants
-from tasks.utils import truncate_pair, TaskConfig, truncate_one
+from tasks.utils import truncate_pair, truncate_one
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -23,11 +24,22 @@ class Task(TaskPoor):
 
     def predict(self):
         preds=self.infer()
-        # 保存标签结果
+        result={}
+        for i,pred in enumerate(preds):
+            id, a, q, c, l = self.test_dataset.doc[i]
+            # label=str(label_map[preds[i]])
+            if id not in result:
+                result[id]=[]
+            result[id].append(pred)
+
         label_map = {i: label for i, label in enumerate(self.labels)}
         with open(self.config.output_submit_file, "w") as writer:
-            for i, pred in enumerate(preds):
-                json_d = { "id":i, "label":str(label_map[pred])  }
+            for k,vs in result.items():
+                l=0
+                for i in range(len(vs)):
+                    if vs[i]==1:
+                        l=i
+                json_d = { "id":k, "label":l  }
                 writer.write(json.dumps(json_d) + '\n')
 
         logger.info(f" test : {len(preds)}  examples  --> {self.config.output_submit_file}")
@@ -54,33 +66,34 @@ class TaskDataset(Dataset):
         lens=[]
         for line in doc0:
             item=json.loads(line.strip())
-            a=item["sentence"]
+            id,l,a,q,c=item['id'],item["label"],item["answer"],item["question"],item["context"]
+            c= "`".join(c)
+
             l=item.get("label",self.labels[0])
             if l not in self.labels:
                 logger.warn(f" error label {line} ")
                 continue
-            a, l = a.strip(), l.strip()
-            doc.append([a,l])
+            doc.append([id,a,q,c,l])
             label_prob[l] = label_prob.get(l, 0) + 1
-            lens.append(len(a))
-        long=max(lens)
-        print(f"longest {long}")  # 4282
+            lens.append(len(q)+len(a)+len(c))
+        long=max(lens)  #1578
+        print(f" longest {long} ")
         if "train" in input_file:
-            doc += self.rebanlance(doc, label_prob)
+            doc+=self.rebanlance(doc,label_prob)
         label_prob1 = {}
         for item in doc:
             l = item[-1]
             label_prob1[l] = label_prob1.get(l, 0) + 1
         return doc
 
-    def rebanlance(self, doc, label_prob):
+    def rebanlance(self,doc,label_prob):
         for k in label_prob.keys():
-            label_prob[k] /= len(doc)
-        expand = []
+            label_prob[k]/=len(doc)
+        expand=[]
         for item in doc:
-            label = item[-1]
+            label=item[-1]
             for i in range(5):
-                if random.random() > label_prob[label]:
+                if random.random()>label_prob[label]:
                     expand.append(item)
         return expand
 
@@ -88,43 +101,87 @@ class TaskDataset(Dataset):
         return self.total_lines
 
     def __getitem__(self, idx):
-        if self.config.task_name=="iflytek":
-            a,l=self.doc[idx]
-            senta = self.tokenizer.tokenize(a,noise=self.config.noise)
-            a=truncate_one(senta,max_len=self.max_tokens-3)
-            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS]
-        if self.config.task_name=="":
-            a,b,l=self.doc[idx]
-            if random.random()<0.5:
-              a,b=b,a
-            senta = self.tokenizer.tokenize(a,noise=self.config.noise)
-            sentb = self.tokenizer.tokenize(b,noise=self.config.noise)
-            a,b=truncate_pair(senta,sentb,max_len=self.max_tokens-5)
-            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]
+        items=self.doc[idx]
+        if self.config.task_name=="c30":
+            id, a, q, c, l=items
+            a,q,c=self.tokenizer.tokenize(a),self.tokenizer.tokenize(q),self.tokenizer.tokenize(c)
+            q=[Constants.TOKEN_BOQ] + q + [Constants.TOKEN_EOQ]
+            a=[Constants.TOKEN_BOA] + a + [Constants.TOKEN_EOA]
+            c=truncate_one(c,max_len=self.max_tokens-3-len(a)-len(q))
+            c=[Constants.TOKEN_BOC] + c + [Constants.TOKEN_EOC]
+            tokens=[Constants.TOKEN_CLS]+q+a+c
 
         label=self.label2idx[l]
-
         length=len(tokens)
+
         tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
         type_ids = []
         k = 0
         for j, c in enumerate(tokens):
             type_ids.append(k)
-            if c in [Constants.TOKEN_EOS]:
+            if c in [Constants.TOKEN_EOQ, Constants.TOKEN_EOA]:
                 k += 1
         tokens = self.tokenizer.convert_tokens_to_ids(tokens)
 
         input_mask=[1]*length+[0]*(self.max_tokens-length)
-        return  (tokens) , (input_mask) ,(type_ids), length,label
+        return  (tokens) , (input_mask), (type_ids) , length,label
+
+def preprocess0(src1,src2,target):
+    with open(src1) as f:
+        data=json.load(f)
+    if src2:
+        with open(src2) as f:
+            data+=json.load(f)
+    doc=[]
+    for item in data:
+        context=item[0]
+        questions=item[1]
+        for qa in questions:
+            q=qa["question"]
+            choice=qa["choice"]
+            answer=qa.get("answer","")
+            for c in choice:
+                # id=qa.get('id',q+'_'+c)
+                id=qa.get('id',q+'_')
+
+                if c==answer:
+                    label='1'
+                else:
+                    label='0'
+                example={ "id":id,"label":label,"answer":c,"question":q,"context":context }
+                doc.append(json.dumps(example,ensure_ascii=False))
+
+    with open(target,"w") as f:
+        f.writelines('\n'.join(doc))
+    logger.info(f" -->{target} ")
+
+def preprocess(datadir):
+    src1=os.path.join(datadir,"m-train.json")
+    src2 = os.path.join(datadir, "d-train.json")
+    target=datadir+'/train.txt'
+    preprocess0(src1,src2,target)
+
+    src1=os.path.join(datadir,"m-dev.json")
+    src2 = os.path.join(datadir, "d-dev.json")
+    target=datadir+'/dev.txt'
+    preprocess0(src1,src2,target)
+
+    src1=os.path.join(datadir,"test.json")
+    src2 =""
+    target=datadir+'/test.txt'
+    preprocess0(src1,src2,target)
 
 
 if __name__ == "__main__":
-    task_name="iflytek"
-    description="长文本分类"
-    lcqmc_config = {
+
+    description="多选阅读理解"
+    labels =  ["0", "1"]
+    # labels =  ["0", "1","2","3"]
+
+    config = {
         # "model_type": "albert",
         # "model_name_or_path": outputs + model_name,
-        "task_name": task_name,
+        "task_name": "c30",
         # "data_dir": data_dir + task_name,
         # "vocab_file": outputs + f"{model_name}/vocab.txt",
         # "bujian_file": outputs + f"{model_name}/bujian.txt",
@@ -135,15 +192,17 @@ if __name__ == "__main__":
         # "learning_rate": 5e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,
-        "train_file":"train.json",
-        "valid_file":"dev.json",
-        "test_file":"test.json",
+        "train_file":"train.txt",
+        "valid_file":"dev.txt",
+        "test_file":"test.txt",
         "TaskDataset":TaskDataset,
-        "labels": [ str(x) for x in range(119) ]
+        "labels":labels
         # "per_gpu_train_batch_size": 16,
         # "per_gpu_eval_batch_size": 16,
     }
-    # torch.multiprocessing.set_start_method('spawn')
-    task=Task(lcqmc_config)
+    # taskConfig=TaskConfig(config)
+    # preprocess(taskConfig.data_dir)
+
+    task=Task(config)
     task.train()
     task.predict()

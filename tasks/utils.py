@@ -81,11 +81,12 @@ class TaskConfig:
     vocab_file="config/vocab.txt"
     bujian_file="config/bujian.txt"
     noise=0
+    n_class=2
     max_len=1024
     batch_size: int = 6
     gradient_accumlengthulation_steps=1
     learning_rate = 2.5e-5 # learning rate
-    n_epochs: int = 5 # the number of epoch
+    n_epochs: int = 1 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
     warmup_proportion: float = 0.1

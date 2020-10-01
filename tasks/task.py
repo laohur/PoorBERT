@@ -12,7 +12,7 @@ from callback.lr_scheduler import get_linear_schedule_with_warmup
 # from callback.optimization.adamw import AdamW
 from callback.progressbar import ProgressBar
 from model.configuration_bert import BertConfig
-from model.modeling_poor import BertForPreTraining, BertForSequenceClassification, BertForTokenClassification, BertForQuestionAnswering
+from model.modeling_poor import BertForPreTraining, BertForSequenceClassification, BertForTokenClassification, BertForQuestionAnswering, BertForMultipleChoice
 from model.tokenization_shang import ShangTokenizer, Sentence
 from tasks.utils import truncate_pair, TaskConfig, find_span, cal_acc
 from tools.common import logger, init_logger
@@ -48,6 +48,9 @@ class TaskPoor:
             model = BertForTokenClassification.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
         elif self.config.output_mode == "qa":
             model = BertForQuestionAnswering.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
+        elif self.config.task_name in ["c3","chid"]:
+            model = BertForMultipleChoice.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
+
         model.to(self.config.device)
         return model
 
@@ -197,7 +200,7 @@ class TaskPoor:
                 elif self.config.output_mode == "span" :
                     for i in range(len(logits)):
                         score = cal_acc(logits[i], label_ids[i])
-                        scores.append(math.floor(score+0.001))
+                        scores.append((score))
                 elif self.config.output_mode == "classification":
                     score = cal_acc(logits, label_ids)
                     scores.append(score)

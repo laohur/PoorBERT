@@ -8,7 +8,7 @@ import os
 import random
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
 from configs import Constants
-from tasks.utils import truncate_pair, truncate_one
+from tasks.utils import truncate_pair, truncate_one, TaskConfig
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -25,21 +25,14 @@ class Task(TaskPoor):
     def predict(self):
         preds=self.infer()
         result={}
-        for i,pred in enumerate(preds):
-            id, a, q, c, l = self.test_dataset.doc[i]
-            # label=str(label_map[preds[i]])
-            if id not in result:
-                result[id]=[]
-            result[id].append(pred)
+        for i in range(len(self.test_dataset)):
+            id,l,a,choice,q,context = self.test_dataset.doc[i//self.config.n_class]
+            result[id]=preds[i]
 
-        label_map = {i: label for i, label in enumerate(self.labels)}
+        # label_map = {i: label for i, label in enumerate(self.labels)}
         with open(self.config.output_submit_file, "w") as writer:
-            for k,vs in result.items():
-                l=0
-                for i in range(len(vs)):
-                    if vs[i]==1:
-                        l=i
-                json_d = { "id":k, "label":l  }
+            for id,l in result.items():
+                json_d = { "id":id, "label":l  }
                 writer.write(json.dumps(json_d) + '\n')
 
         logger.info(f" test : {len(preds)}  examples  --> {self.config.output_submit_file}")
@@ -57,6 +50,7 @@ class TaskDataset(Dataset):
         self.doc = self.load_file(input_file)
         self.total_lines =len(self.doc)
         logger.info(f"  装载{input_file}完毕{self.total_lines}")
+        self.items=None
 
     def load_file(self,input_file):
         with open(input_file) as f:
@@ -66,24 +60,20 @@ class TaskDataset(Dataset):
         lens=[]
         for line in doc0:
             item=json.loads(line.strip())
-            id,l,a,q,c=item['id'],item["label"],item["answer"],item["question"],item["context"]
-            c= "`".join(c)
-
-            l=item.get("label",self.labels[0])
-            if l not in self.labels:
-                logger.warn(f" error label {line} ")
-                continue
-            doc.append([id,a,q,c,l])
+            id,a,choice,q,context=item['id'],item["answer"],item["choice"],item["question"],' '.join(item["context"])
+            if "train" in input_file:
+                random.shuffle(choice)
+            l=0
+            for i,item in enumerate(choice):
+                if choice[i]==a:
+                    l=i
+                    break
+            # l=item.get("label",self.labels[0])
+            doc.append([id,l,a,choice,q,context])
             label_prob[l] = label_prob.get(l, 0) + 1
-            lens.append(len(q)+len(a)+len(c))
-        long=max(lens)  #1578
+            lens.append(len(q)+len(a)+len(context))
+        long=max(lens)  #1577
         print(f" longest {long} ")
-        if "train" in input_file:
-            doc+=self.rebanlance(doc,label_prob)
-        label_prob1 = {}
-        for item in doc:
-            l = item[-1]
-            label_prob1[l] = label_prob1.get(l, 0) + 1
         return doc
 
     def rebanlance(self,doc,label_prob):
@@ -98,12 +88,15 @@ class TaskDataset(Dataset):
         return expand
 
     def __len__(self):
-        return self.total_lines
+        return self.total_lines*self.config.n_class
 
     def __getitem__(self, idx):
-        items=self.doc[idx]
+        i=idx//self.config.n_class
+        offset=idx%self.config.n_class
         if self.config.task_name=="c3":
-            id, a, q, c, l=items
+            items = self.doc[i]
+            id,l,a,choice,q,c=items
+            a=choice[offset]
             a,q,c=self.tokenizer.tokenize(a),self.tokenizer.tokenize(q),self.tokenizer.tokenize(c)
             q=[Constants.TOKEN_BOQ] + q + [Constants.TOKEN_EOQ]
             a=[Constants.TOKEN_BOA] + a + [Constants.TOKEN_EOA]
@@ -111,7 +104,8 @@ class TaskDataset(Dataset):
             c=[Constants.TOKEN_BOC] + c + [Constants.TOKEN_EOC]
             tokens=[Constants.TOKEN_CLS]+q+a+c
 
-        label=self.label2idx[l]
+        # label=self.label2idx[l]
+        label=l
         length=len(tokens)
 
         tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
@@ -140,16 +134,16 @@ def preprocess0(src1,src2,target):
             q=qa["question"]
             choice=qa["choice"]
             answer=qa.get("answer","")
-            for c in choice:
-                # id=qa.get('id',q+'_'+c)
-                id=qa.get('id',q+'_')
-
-                if c==answer:
-                    label='1'
-                else:
-                    label='0'
-                example={ "id":id,"label":label,"answer":c,"question":q,"context":context }
-                doc.append(json.dumps(example,ensure_ascii=False))
+            # id=qa.get('id',q+'_'+c)
+            id=qa.get('id',q+'_')
+            label=0
+            for i in range(4):
+                if i>=len(choice):
+                    choice.append("无效答案")
+                elif choice[i] == answer:
+                    label = i
+            example={ "id":id,"answer":answer,"choice":choice,"question":q,"context":context }
+            doc.append(json.dumps(example,ensure_ascii=False))
 
     with open(target,"w") as f:
         f.writelines('\n'.join(doc))
@@ -175,8 +169,8 @@ def preprocess(datadir):
 if __name__ == "__main__":
 
     description="多选阅读理解"
-    labels =  ["0", "1"]
-    # labels =  ["0", "1","2","3"]
+    # labels =  ["0", "1"]
+    labels =  ["0", "1","2","3"]
 
     config = {
         # "model_type": "albert",
@@ -196,6 +190,7 @@ if __name__ == "__main__":
         "valid_file":"dev.txt",
         "test_file":"test.txt",
         "TaskDataset":TaskDataset,
+        "n_class":len(labels),
         "labels":labels
         # "per_gpu_train_batch_size": 16,
         # "per_gpu_eval_batch_size": 16,
