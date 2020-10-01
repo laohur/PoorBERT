@@ -82,7 +82,7 @@ class TaskConfig:
     bujian_file="config/bujian.txt"
     noise=0
     max_len=1024
-    batch_size: int = 7
+    batch_size: int = 6
     gradient_accumlengthulation_steps=1
     learning_rate = 2.5e-5 # learning rate
     n_epochs: int = 5 # the number of epoch

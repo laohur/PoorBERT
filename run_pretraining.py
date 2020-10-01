@@ -2,6 +2,8 @@ import gc
 import os
 import random
 import traceback
+
+import numpy as np
 import torch
 import json
 import time
@@ -54,7 +56,7 @@ def train_tokened(model,batch,config):
         loss_batch=[loss,masked_lm_loss0,masked_lm_loss1 , sentence_relation_loss0,sentence_relation_loss1, char_struct_loss , word_struct_loss ]
         loss_batch=[ x.item() for x in loss_batch ]
 
-    msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'字':loss_batch[5],'词':loss_batch[6],'len':batch[0].shape[1]}
+    msg={'总':loss_batch[0],'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'字':loss_batch[5],'词':loss_batch[6],'len':batch[0].shape[1]}
     return msg
 
 def train_self(model,batch,config):
@@ -84,7 +86,7 @@ def train_self(model,batch,config):
         loss_batch = [loss,masked_lm_loss0, masked_lm_loss1,   sentence_relation_loss0, sentence_relation_loss1]
         loss_batch = [x.item() for x in loss_batch]
 
-    msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'len':batch[0].shape[1]}
+    msg={'总':loss_batch[0],'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'len':batch[0].shape[1]}
     return msg
 
 def train_qa(model,batch,config):
@@ -114,7 +116,7 @@ def train_qa(model,batch,config):
         loss_batch = [loss,masked_lm_loss0, masked_lm_loss1,   qa_loss0, qa_loss1]
         loss_batch = [x.item() for x in loss_batch]
 
-    msg={'总':loss_batch[0],'时':time.time()-t0 ,'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'len':batch[0].shape[1]}
+    msg={'总':loss_batch[0],'lr': scheduler.get_last_lr()[0],'掩0':loss_batch[1],'掩1':loss_batch[2],'系0':loss_batch[3],'系1':loss_batch[4],'len':batch[0].shape[1]}
     return msg
 
 def train(model,tokenizer,file_path,config):
@@ -131,8 +133,6 @@ def train(model,tokenizer,file_path,config):
         tag="qa"
         epoch_dataset = PretrainQaDataset(input_file=file_path,tokenizer=tokenizer,max_tokens=config.max_len)
 
-    start_time = time.time()
-    t0 = time.time()
     if config.local_rank == -1:
         train_sampler = RandomSampler(epoch_dataset)
     else:
@@ -141,13 +141,15 @@ def train(model,tokenizer,file_path,config):
 
     model.train()
     msg={}
+    start_time = time.time()
     pbar = ProgressBar(n_total=len(train_dataloader), desc=f"{tag} pretrain {file_path[-20:]}")
     for step, batch in enumerate(train_dataloader):
         try:
             batch = tuple(t.to(device) for t in batch)
             msg = train_epoch(model, batch, config)
+            msg["时"]=time.time()-start_time
             pbar(step, msg)
-            start_time=train_after(step, start_time,tokenizer,len(batch),msg,len(train_dataloader),config)
+            train_after(step, start_time,tokenizer,len(batch),msg,len(train_dataloader),config)
         except Exception as e:
             gc.collect()
             torch.cuda.empty_cache()
@@ -242,7 +244,7 @@ class PretrainConfig:
     max_grad_norm=1
 
     max_len=32
-    train_batch_size=500
+    train_batch_size=128
     total_train_examples=33e7  # 5m~=8000lines   1g~=E7
     gradient_accumulation_steps=1
 
@@ -267,6 +269,7 @@ class PretrainConfig:
     def __init__(self, dic):
         for k, v in dic.items():
             setattr(self, k, v)
+        self.total_train_examples*=self.epochs
         self.output_dir=self.outputs
         self.log_file = str(self.output_dir / "train.log")
         self.trained_log = self.output_dir / "trained.log"
@@ -306,9 +309,17 @@ if __name__ == '__main__':
 
     if config.gradient_accumulation_steps < 1:
         raise ValueError(            f"Invalid gradient_accumulation_steps parameter: {config.gradient_accumulation_steps}, should be >= 1")
-    config.train_batch_size = config.train_batch_size // config.gradient_accumulation_steps
 
-    num_train_optimization_steps = int( config.total_train_examples / config.train_batch_size / config.gradient_accumulation_steps)
+    probs = [0.1, 0.2, 0.2, 0.2, 0.2, 0.1]
+    lens = [1024, 512, 256, 128, 64, 32]
+    sizes = [7, 19, 44, 97, 208, 430]
+    steps=0
+    for i, p in enumerate(probs):
+        steps+=probs[i]/sizes[i]
+    num_train_optimization_steps=int(config.total_train_examples*steps)
+    config.train_batch_size=int(config.total_train_examples/num_train_optimization_steps)
+    # config.train_batch_size = config.train_batch_size // config.gradient_accumulation_steps
+    # num_train_optimization_steps = int( config.total_train_examples / config.train_batch_size / config.gradient_accumulation_steps)
     if config.local_rank != -1:
         num_train_optimization_steps = num_train_optimization_steps // torch.distributed.get_world_size()
     config.warmup_steps = int(num_train_optimization_steps * config.warmup_proportion)
@@ -385,22 +396,14 @@ if __name__ == '__main__':
                 logger.info(f" {file_path}  already trained")
                 continue
             if os.path.getsize(file_path) <100:
-                logger.info(f" {file_path} filesize {os.path.getsize(file_path)}  too small")
+                logger.info(f" {file_path} file size {os.path.getsize(file_path)}  too small")
                 continue
-            rand=random.random()
-            probs=[0.1,0.2,0.4,0.7,0.9,2]
-            lens=[1024,512,256,128,64,32]
-            # sizes=[6,16,40,100,210,430]
-            sizes=[7,19,44,98,208,432]
+            idx = np.random.choice(a=6, size=1, replace=False, p=probs)[0]
+            config.max_len = lens[idx]
+            config.train_batch_size = sizes[idx]
             # gradient_accumulation_steps=[16,12,8,4,2,1]
-            for i ,p in enumerate(probs):
-                # i=5
-                if rand<p:
-                    config.max_len = lens[i]
-                    config.train_batch_size = sizes[i]
-                    # config.gradient_accumulation_steps=gradient_accumulation_steps[i]
-                    break
-            config.train_batch_size = int(config.train_batch_size * 1)
+            # config.gradient_accumulation_steps=gradient_accumulation_steps[i]
+            # config.train_batch_size = int(config.train_batch_size * 0.7)
 
             t0=time.time()
             logger.info(f" fid {fid} folder {len(files)}  max_len {config.max_len} batch_size {config.train_batch_size} gradient_accumulation_steps {config.gradient_accumulation_steps}")

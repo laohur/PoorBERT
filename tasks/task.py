@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import sys
 sys.path.append("..")
@@ -164,7 +165,7 @@ class TaskPoor:
         dataset=self.valid_dataset
         sampler = SequentialSampler(dataset) if args.local_rank == -1 else DistributedSampler(dataset)
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=self.config.batch_size, collate_fn=self.config.collate_fn, pin_memory=self.config.pin_memory, num_workers=self.config.num_workers)
-
+        print(' ')
         nb_eval_steps = 0
         scores=[]
         pbar = ProgressBar(n_total=len(dataloader), desc="Evaluating")
@@ -196,7 +197,7 @@ class TaskPoor:
                 elif self.config.output_mode == "span" :
                     for i in range(len(logits)):
                         score = cal_acc(logits[i], label_ids[i])
-                        scores.append(score)
+                        scores.append(math.floor(score+0.001))
                 elif self.config.output_mode == "classification":
                     score = cal_acc(logits, label_ids)
                     scores.append(score)
@@ -220,8 +221,8 @@ class TaskPoor:
     def infer(self):
         args=self.config
         logger.info(f"selected best model acc:{self.acc}")
-        # model= self.load_model(self.config.output_dir)
-        model=self.model
+        model= self.load_model(self.config.output_dir)
+        # model=self.model
         model.eval()
         # dataset=self.valid_dataset
         input_file=os.path.join(self.config.data_dir,self.config.test_file)

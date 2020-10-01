@@ -70,7 +70,7 @@ class TaskDataset(Dataset):
 
     def __getitem__(self, idx):
         items=self.doc[idx]
-        if self.config.task_name=="cmrc2018":
+        if self.config.task_name=="cmrc":
             id, a, q, c =items
             [a,q,c]=[ self.tokenizer.tokenize(x) for x in (a,q,c) ]
             # c, q = truncate_pair(c, q, max_len=self.max_tokens - 5)
@@ -143,7 +143,7 @@ def preprocess(datadir):
 
 
 if __name__ == "__main__":
-    task_name="cmrc2018"
+    task_name="cmrc"
     description="抽取式阅读理解"
     labels =  ["0", "1"]
     config = {
