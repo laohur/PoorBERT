@@ -243,11 +243,10 @@ class PretrainConfig:
     weight_decay=0.01
     max_grad_norm=1
 
-    max_len=32
-    train_batch_size=128
+    max_len=128
+    train_batch_size=32
     total_train_examples=33e7  # 5m~=8000lines   1g~=E7
     gradient_accumulation_steps=1
-
 
     global_step:int =0
     last_time = time.time()
@@ -310,9 +309,9 @@ if __name__ == '__main__':
     if config.gradient_accumulation_steps < 1:
         raise ValueError(            f"Invalid gradient_accumulation_steps parameter: {config.gradient_accumulation_steps}, should be >= 1")
 
-    probs = [0.1, 0.2, 0.2, 0.2, 0.2, 0.1]
-    lens = [1024, 512, 256, 128, 64, 32]
-    sizes = [7, 19, 44, 97, 208, 430]
+    probs = [0.2, 0.2, 0.2, 0.2, 0.2]
+    lens = [1024, 512, 256, 128, 64]
+    sizes = [7, 18, 44, 97, 208]
     steps=0
     for i, p in enumerate(probs):
         steps+=probs[i]/sizes[i]
@@ -381,10 +380,10 @@ if __name__ == '__main__':
         files+=glob.glob(r"/media/u/t1/data/tokened/*/*.txt")
         # files+=glob.glob(r"/media/u/t1/data/self/*/*.txt")
         files+=glob.glob(r"/media/u/t1/data/qa/*/*.txt")
-        random.shuffle(files)
         # files=np.random.choice(files,100,replace=False)
         logger.info(  f" \n\n ==== training {len(files)} files ==== \n")  #13000
         # files.sort()
+        random.shuffle(files)
         for fid,file_path in enumerate(files):
             file_path=str(file_path)
             trained=False
@@ -398,7 +397,7 @@ if __name__ == '__main__':
             if os.path.getsize(file_path) <100:
                 logger.info(f" {file_path} file size {os.path.getsize(file_path)}  too small")
                 continue
-            idx = np.random.choice(a=6, size=1, replace=False, p=probs)[0]
+            idx = np.random.choice(a=len(probs), size=1, replace=False, p=probs)[0]
             config.max_len = lens[idx]
             config.train_batch_size = sizes[idx]
             # gradient_accumulation_steps=[16,12,8,4,2,1]

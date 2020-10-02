@@ -1,4 +1,7 @@
 import sys
+
+from tasks import utils
+
 sys.path.append("..")
 sys.path.append(".")
 import json
@@ -61,13 +64,13 @@ class TaskDataset(Dataset):
         lens=[]
         for line in doc0:
             item=json.loads(line.strip())
-            a= " ".join(item["keyword"])
+            a= "、".join(item["keyword"])
             b=item["abst"].strip()
 
             l=item.get("label",self.labels[0])
-            if l not in self.labels:
-                logger.warn(f" error label {line} ")
-                continue
+            # if l not in self.labels:
+            #     logger.warn(f" error label {line} ")
+            #     continue
             # a, b, l = a.strip(), b.strip(), l.strip()
             doc.append([a,b,l])
             label_prob[l] = label_prob.get(l, 0) + 1
@@ -75,33 +78,17 @@ class TaskDataset(Dataset):
         long=max(lens)  #1545
         print(f" longest {long} ")
         if "train" in input_file:
-            doc += self.rebanlance(doc, label_prob)
+            doc += utils.rebanlance(doc, label_prob)
         label_prob1 = {}
         for item in doc:
             l = item[-1]
             label_prob1[l] = label_prob1.get(l, 0) + 1
         return doc
 
-    def rebanlance(self, doc, label_prob):
-        for k in label_prob.keys():
-            label_prob[k] /= len(doc)
-        expand = []
-        for item in doc:
-            label = item[-1]
-            for i in range(5):
-                if random.random() > label_prob[label]:
-                    expand.append(item)
-        return expand
-
     def __len__(self):
         return self.total_lines
 
     def __getitem__(self, idx):
-        if len(self.doc[idx])==-2:
-            a,l=self.doc[idx]
-            senta = self.tokenizer.tokenize(a)
-            a=truncate_one(senta,max_len=self.max_tokens-3)
-            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS]
         if self.config.task_name=="csl":
             a,b,l=self.doc[idx]
             senta = self.tokenizer.tokenize(a)

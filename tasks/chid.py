@@ -73,17 +73,6 @@ class TaskDataset(Dataset):
         print(f" longest {long} ")
         return doc
 
-    def rebanlance(self, doc, label_prob):
-        for k in label_prob.keys():
-            label_prob[k] /= len(doc)
-        expand = []
-        for item in doc:
-            label = item[-1]
-            for i in range(5):
-                if random.random() > label_prob[label]:
-                    expand.append(item)
-        return expand
-
     def __len__(self):
         return self.total_lines*self.config.n_class
 

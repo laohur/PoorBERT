@@ -81,17 +81,6 @@ class TaskDataset(Dataset):
             label_prob1[label] = label_prob1.get(label, 0) + 1
         return doc
 
-    def rebanlance(self, doc, label_prob):
-        for k in label_prob.keys():
-            label_prob[k] /= len(doc)
-        expand = []
-        for item in doc:
-            label = item[-1]
-            for i in range(5):
-                if random.random() > label_prob[label]:
-                    expand.append(item)
-        return expand
-
     def __len__(self):
         return self.total_lines
 

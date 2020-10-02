@@ -1,11 +1,23 @@
 import os
 import json
-
+import random
 import numpy as np
 import torch
 import sys
 sys.path.append("..")
 sys.path.append(".")
+
+
+def rebanlance(self, doc, label_prob):
+    for k in label_prob.keys():
+        label_prob[k] = label_prob[k] * len(label_prob) / len(doc)
+    expand = []
+    for item in doc:
+        label = item[-1]
+        for i in range(5):
+            if random.random() > label_prob[label]:
+                expand.append(item)
+    return expand
 
 def cal_acc(preds, labels):
     p=torch.argmax(preds,1).detach().cpu().numpy()
@@ -86,7 +98,7 @@ class TaskConfig:
     batch_size: int = 6
     gradient_accumlengthulation_steps=1
     learning_rate = 2.5e-5 # learning rate
-    n_epochs: int = 1 # the number of epoch
+    n_epochs: int = 5 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
     warmup_proportion: float = 0.1

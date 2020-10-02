@@ -2,6 +2,9 @@ import json
 import logging
 import random
 import sys
+
+from tasks import utils
+
 sys.path.append("..")
 sys.path.append(".")
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
@@ -80,24 +83,13 @@ class TaskDataset(Dataset):
             lens.append(len(a)+len(b)+len(c)+len(d)+len(e))
         long=max(lens)  #142
         print(f"longest {long}")
-        # if "train" in input_file:
-        #     doc += self.rebanlance(doc, label_prob)
+        if "train" in input_file:
+            doc += utils.rebanlance(doc, label_prob)
         label_prob1={}
         for item in doc:
             l=item[-1]
             label_prob1[l]=label_prob1.get(l,0)+1
         return doc
-
-    def rebanlance(self, doc, label_prob):
-        for k in label_prob.keys():
-            label_prob[k] /= len(doc)
-        expand = []
-        for item in doc:
-            label = item[-1]
-            for i in range(5):
-                if random.random() > label_prob[label]:
-                    expand.append(item)
-        return expand
 
     def __len__(self):
         return self.total_lines
@@ -106,8 +98,6 @@ class TaskDataset(Dataset):
         if self.config.task_name=="wsc":
             a,b,c,d,e,l=self.doc[idx]
             a,b,c,d,e = self.tokenizer.tokenize(a,noise=self.config.noise),self.tokenizer.tokenize(b),self.tokenizer.tokenize(c,noise=self.config.noise),self.tokenizer.tokenize(d),self.tokenizer.tokenize(e,noise=self.config.noise)
-
-            # a=truncate_one(senta,max_len=self.max_tokens-3)
             tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a +["unsued1"]+b+["unsued1"]+c+["unsued3"]+d+["unsued3"]+e+ [Constants.TOKEN_EOS]
 
         label=self.label2idx[l]
@@ -143,9 +133,9 @@ if __name__ == "__main__":
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 256,
         # "batch_size":50,
-        "n_epochs":1,
+        "n_epochs":50,
         # "num_workers":0,
-        # "learning_rate": 10e-5,
+        "learning_rate": 2e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,
         "train_file":"train.json",

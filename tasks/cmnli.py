@@ -1,17 +1,14 @@
 import sys
+
+from tasks import utils
+
 sys.path.append("..")
 sys.path.append(".")
 
 import json
 import logging
-import os
 import random
-
-import numpy as np
-import torch
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
-
-from callback.progressbar import ProgressBar
 from configs import Constants
 from tasks.utils import truncate_pair, TaskConfig, truncate_one
 from tasks.task import TaskPoor
@@ -73,23 +70,12 @@ class TaskDataset(Dataset):
         long=max(lens)  #200
         print(f" longest {long} ")
         if "train" in input_file:
-            doc += self.rebanlance(doc, label_prob)
+            doc += utils.rebanlance(doc, label_prob)
         label_prob1 = {}
         for item in doc:
             l = item[-1]
             label_prob1[l] = label_prob1.get(l, 0) + 1
         return doc
-
-    def rebanlance(self, doc, label_prob):
-        for k in label_prob.keys():
-            label_prob[k] /= len(doc)
-        expand = []
-        for item in doc:
-            label = item[-1]
-            for i in range(5):
-                if random.random() > label_prob[label]:
-                    expand.append(item)
-        return expand
 
     def __len__(self):
         return self.total_lines
