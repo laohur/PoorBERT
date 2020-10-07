@@ -137,6 +137,7 @@ if __name__ == "__main__":
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 256,
         # "batch_size":50,
+        "num_workers":4,
         # "learning_rate": 5e-4,
         # "n_epochs":  5, # the number of epoch,
         # "logging_steps": 100,

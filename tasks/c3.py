@@ -1,5 +1,7 @@
 import sys
 
+import numpy as np
+
 sys.path.append("..")
 sys.path.append(".")
 import json
@@ -26,14 +28,14 @@ class Task(TaskPoor):
         preds=self.infer()
         result={}
         for i in range(len(self.test_dataset)):
-            id,l,a,choice,q,context = self.test_dataset.doc[i//self.config.n_class]
+            id,l,a,choice,q,context = self.test_dataset.doc[i]
             result[id]=preds[i]
 
         # label_map = {i: label for i, label in enumerate(self.labels)}
         with open(self.config.output_submit_file, "w") as writer:
             for id,l in result.items():
                 json_d = { "id":id, "label":l  }
-                writer.write(json.dumps(json_d) + '\n')
+                writer.write(json.dumps(json_d,ensure_ascii=False) + '\n')
 
         logger.info(f" test : {len(preds)}  examples  --> {self.config.output_submit_file}")
 
@@ -60,54 +62,54 @@ class TaskDataset(Dataset):
         lens=[]
         for line in doc0:
             item=json.loads(line.strip())
-            id,a,choice,q,context=item['id'],item["answer"],item["choice"],item["question"],' '.join(item["context"])
+            id,answer,choice,question,context=item['id'],item["answer"],item["choice"],item["question"],' '.join(item["context"])
             if "train" in input_file:
                 random.shuffle(choice)
-            l=0
-            for i,item in enumerate(choice):
-                if choice[i]==a:
-                    l=i
-                    break
-            # l=item.get("label",self.labels[0])
-            doc.append([id,l,a,choice,q,context])
-            label_prob[l] = label_prob.get(l, 0) + 1
-            lens.append(len(q)+len(a)+len(context))
+            label = 0
+            for i in range(self.config.num_labels):
+                if i >= len(choice):
+                    choice.append("无效答案")
+                if answer == choice[i]:
+                    label = i
+            # label_prob[l] = label_prob.get(l, 0) + 1
+            doc.append([id,answer,choice,question,context,label])
+            lens.append(len(question)+len(answer)+len(context))
         long=max(lens)  #1577
         print(f" longest {long} ")
         return doc
 
     def __len__(self):
-        return self.total_lines*self.config.n_class
+        return self.total_lines
 
     def __getitem__(self, idx):
-        i=idx//self.config.n_class
-        offset=idx%self.config.n_class
+        tokenses,input_maskes,type_idses,lengthes=[],[],[],[]
         if self.config.task_name=="c3":
-            items = self.doc[i]
-            id,l,a,choice,q,c=items
-            a=choice[offset]
-            a,q,c=self.tokenizer.tokenize(a),self.tokenizer.tokenize(q),self.tokenizer.tokenize(c)
-            q=[Constants.TOKEN_BOQ] + q + [Constants.TOKEN_EOQ]
-            a=[Constants.TOKEN_BOA] + a + [Constants.TOKEN_EOA]
-            c=truncate_one(c,max_len=self.max_tokens-3-len(a)-len(q))
-            c=[Constants.TOKEN_BOC] + c + [Constants.TOKEN_EOC]
-            tokens=[Constants.TOKEN_CLS]+q+a+c
+            id,answer,choice,question,context,label= self.doc[idx]
+            for i in range(self.config.num_labels):
+                option=choice[i]
+                a,q,c=self.tokenizer.tokenize(option),self.tokenizer.tokenize(question),self.tokenizer.tokenize(context)
+                q=[Constants.TOKEN_BOQ] + q + [Constants.TOKEN_EOQ]
+                a=[Constants.TOKEN_BOA] + a + [Constants.TOKEN_EOA]
+                c=truncate_one(c,max_len=self.max_tokens-3-len(a)-len(q))
+                c=[Constants.TOKEN_BOC] + c + [Constants.TOKEN_EOC]
+                tokens=[Constants.TOKEN_CLS]+q+a+c
+                length=len(tokens)
 
-        # label=self.label2idx[l]
-        label=l
-        length=len(tokens)
-
-        tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
-        type_ids = []
-        k = 0
-        for j, c in enumerate(tokens):
-            type_ids.append(k)
-            if c in [Constants.TOKEN_EOQ, Constants.TOKEN_EOA]:
-                k += 1
-        tokens = self.tokenizer.convert_tokens_to_ids(tokens)
-
-        input_mask=[1]*length+[0]*(self.max_tokens-length)
-        return  (tokens) , (input_mask), (type_ids) , length,label
+                tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
+                type_ids = []
+                k = 0
+                for j, c in enumerate(tokens):
+                    type_ids.append(k)
+                    if c in [Constants.TOKEN_EOQ, Constants.TOKEN_EOA]:
+                        k += 1
+                tokens = self.tokenizer.convert_tokens_to_ids(tokens)
+                input_mask=[1]*length+[0]*(self.max_tokens-length)
+                tokenses.append(tokens)
+                input_maskes.append(input_mask)
+                type_idses.append(type_ids)
+                lengthes.append(length)
+        tokenses, input_maskes, type_idses, lengthes= [np.array(x) for x in [tokenses,input_maskes,type_idses,lengthes]]
+        return  tokenses,input_maskes,type_idses,lengthes,label
 
 def preprocess0(src1,src2,target):
     with open(src1) as f:
@@ -124,13 +126,8 @@ def preprocess0(src1,src2,target):
             choice=qa["choice"]
             answer=qa.get("answer","")
             # id=qa.get('id',q+'_'+c)
-            id=qa.get('id',q+'_')
-            label=0
-            for i in range(4):
-                if i>=len(choice):
-                    choice.append("无效答案")
-                elif choice[i] == answer:
-                    label = i
+            id=qa.get('id','id_'+q)
+
             example={ "id":id,"answer":answer,"choice":choice,"question":q,"context":context }
             doc.append(json.dumps(example,ensure_ascii=False))
 
@@ -171,7 +168,8 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 1024,
-        # "batch_size":8,
+        "batch_size":1,
+        "num_workers":0,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,
@@ -179,7 +177,7 @@ if __name__ == "__main__":
         "valid_file":"dev.txt",
         "test_file":"test.txt",
         "TaskDataset":TaskDataset,
-        "n_class":len(labels),
+        "num_labels":len(labels),
         "labels":labels
         # "per_gpu_train_batch_size": 16,
         # "per_gpu_eval_batch_size": 16,

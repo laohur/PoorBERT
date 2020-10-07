@@ -177,7 +177,7 @@ def train_after(step,start_time,tokenizer, batch_size,msg,n_total,config):
         tr_mask_loss.update(masked_lm_loss, n=1)
         tr_sop_loss.update(next_sentence_loss, n=1)
 
-        if config.global_step % config.num_eval_steps == 0  or step+1==n_total :
+        if config.num_eval_steps>0 and config.global_step % config.num_eval_steps == 0:
             print()
             now = time.time()
             eta = now - start_time
@@ -204,26 +204,26 @@ def train_after(step,start_time,tokenizer, batch_size,msg,n_total,config):
             start_time = now
             config.last_time=time.time()
 
-    if config.global_step % config.num_save_steps == 0 or (step+1==n_total and step>config.num_eval_steps ) :
-        if config.local_rank in [-1, 0] and config.num_save_steps > 0:
-            print()
-            # Save model checkpoint
-            output_dir = config.output_dir
-            if not output_dir.exists():
-                output_dir.mkdir()
-            # save model
-            model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-            model_to_save.save_pretrained(str(output_dir))
-            torch.save(config, str(output_dir / 'training_args.bin'))
-            logger.info("Saving model checkpoint to %s", output_dir)
+    # if config.local_rank in [-1, 0] and config.num_save_steps > 0 and  （config.global_step % config.num_save_steps == 0 or step+1==n_total and step>config.num_eval_steps ) :
+    if config.local_rank in [-1, 0] and config.num_save_steps > 0 and (config.global_step % config.num_save_steps == 0 or fid + 1 == len(files)):
+        print()
+        # Save model checkpoint
+        output_dir = config.output_dir
+        if not output_dir.exists():
+            output_dir.mkdir()
+        # save model
+        model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
+        model_to_save.save_pretrained(str(output_dir))
+        torch.save(config, str(output_dir / 'training_args.bin'))
+        logger.info("Saving model checkpoint to %s", output_dir)
 
-            torch.save(optimizer.state_dict(), str(output_dir / "optimizer.bin"))
-            # save config
-            output_config_file = output_dir / CONFIG_NAME
-            with open(str(output_config_file), 'w') as f:
-                f.write(model_to_save.config.to_json_string())
-            # save vocab
-            tokenizer.save_vocabulary(output_dir)
+        torch.save(optimizer.state_dict(), str(output_dir / "optimizer.bin"))
+        # save config
+        output_config_file = output_dir / CONFIG_NAME
+        with open(str(output_config_file), 'w') as f:
+            f.write(model_to_save.config.to_json_string())
+        # save vocab
+        tokenizer.save_vocabulary(output_dir)
     return start_time
 
 class PretrainConfig:
@@ -238,7 +238,7 @@ class PretrainConfig:
     learning_rate=1e-4
     warmup_proportion=0.1
     num_eval_steps=1000
-    num_save_steps=10000
+    num_save_steps=5000
     adam_epsilon=1e-6
     weight_decay=0.01
     max_grad_norm=1
@@ -400,9 +400,7 @@ if __name__ == '__main__':
             idx = np.random.choice(a=len(probs), size=1, replace=False, p=probs)[0]
             config.max_len = lens[idx]
             config.train_batch_size = sizes[idx]
-            # gradient_accumulation_steps=[16,12,8,4,2,1]
-            # config.gradient_accumulation_steps=gradient_accumulation_steps[i]
-            # config.train_batch_size = int(config.train_batch_size * 0.7)
+            # config.train_batch_size = int(config.train_batch_size * 0.2)
 
             t0=time.time()
             logger.info(f" fid {fid} folder {len(files)}  max_len {config.max_len} batch_size {config.train_batch_size} gradient_accumulation_steps {config.gradient_accumulation_steps}")
@@ -428,7 +426,7 @@ if __name__ == '__main__':
 # if __name__ == '__main__':
     # main()
 '''
- python3  run_pretraining.py  
+ python3  pretrain.py  
 
 none  
 bujian      

@@ -8,7 +8,7 @@ import os
 import random
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
 from configs import Constants
-from tasks.utils import truncate_pair, truncate_one
+from tasks.utils import truncate_pair, truncate_one, rebanlance
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class TaskDataset(Dataset):
         long=max(lens)  #1578
         print(f" longest {long} ")
         if "train" in input_file:
-            doc+=self.rebanlance(doc,label_prob)
+            doc+=rebanlance(doc,label_prob)
         label_prob1 = {}
         for item in doc:
             l = item[-1]

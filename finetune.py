@@ -6,8 +6,7 @@ import subprocess
 
 
 def run_all():
-    tasks=["afqmc",'tnews','iflytek','cmnli','wsc','csl',"cmrc",'cmrc2018','chid','chid0','c3','c30']
-    tasks=['chid','c3']
+    tasks=["afqmc",'tnews','iflytek','cmnli','wsc','csl',"cmrc",'cmrc2018', 'c3','c30','chid','chid0']
     for i,task in enumerate(tasks):
         # cmd=f"  CUDA_VISIBLE_DEVICES={'0'} python3 tasks/{task}.py  --model_name none"
         cmd=f"  python3 tasks/{task}.py  "
@@ -17,6 +16,6 @@ if __name__ == "__main__":
     run_all()
 
 '''
-python3  run_tasks.py 
+python3  finetune.py 
 
 '''

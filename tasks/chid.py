@@ -27,12 +27,10 @@ class Task(TaskPoor):
         preds=self.infer()
         result={}
         for i in range(len(self.test_dataset)):
-            id, left, right, candidates, label= self.test_dataset.doc[i//self.config.n_class]
+            id, left, right, candidates, label= self.test_dataset.doc[i]
             result[id]=preds[i]
 
-        # label_map = {i: label for i, label in enumerate(self.labels)}
         with open(self.config.output_submit_file, "w") as writer:
-            # json.dump(result,writer,ensure_ascii=False)
             writer.write(json.dumps(result, indent=4, ensure_ascii=False) + "\n")
 
         logger.info(f" test : {len(preds)}  examples  --> {self.config.output_submit_file}")
@@ -63,40 +61,43 @@ class TaskDataset(Dataset):
             if "train" in input_file:
                 random.shuffle(candidates)
             label=0
-            for i in range(self.config.n_class):
+            for i in range(self.config.num_labels):
+                if i >= len(candidates):
+                    candidates.append("无效答案")
                 if candidates[i]==answer:
                     label=i
-                    break
             doc.append([id, left, right, candidates,label ])
             lens.append(len(left)+len(right)+len(candidates[label]))
-        long=max(lens)  #602
+        long=max(lens)  #606
         print(f" longest {long} ")
         return doc
 
     def __len__(self):
-        return self.total_lines*self.config.n_class
+        return self.total_lines
 
     def __getitem__(self, idx):
-        i=idx//self.config.n_class
-        offset=idx%self.config.n_class
+        tokenses,input_maskes,type_idses,lengthes=[],[],[],[]
         if self.config.task_name=="chid":
-            items = self.doc[i]
-            id, left, right, candidates,label=items
-            [ idiom, left, right]=[ self.tokenizer.tokenize(x) for x in ( candidates[offset], left, right) ]
-            tokens=[Constants.TOKEN_CLS]+[Constants.TOKEN_BOS]+idiom+[Constants.TOKEN_EOS,Constants.TOKEN_BOS]+left+[Constants.TOKEN_MASK]*4+right+[Constants.TOKEN_EOS]
-
-        length=len(tokens)
-        tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
-        type_ids = []
-        k = 0
-        for j, c in enumerate(tokens):
-            type_ids.append(k)
-            if c in [Constants.TOKEN_EOS]:
-                k += 1
-        tokens = self.tokenizer.convert_tokens_to_ids(tokens)
-
-        input_mask=[1]*length+[0]*(self.max_tokens-length)
-        return  (tokens) , (input_mask) , (type_ids),length,label
+            id, left, right, candidates,label=self.doc[idx]
+            for i in range(self.config.num_labels):
+                [ idiom, l, r]=[ self.tokenizer.tokenize(x) for x in ( candidates[i], left, right) ]
+                tokens=[Constants.TOKEN_CLS]+[Constants.TOKEN_BOS]+idiom+[Constants.TOKEN_EOS,Constants.TOKEN_BOS]+l+[Constants.TOKEN_MASK]*4+r+[Constants.TOKEN_EOS]
+                length=len(tokens)
+                tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
+                type_ids = []
+                k = 0
+                for j, c in enumerate(tokens):
+                    type_ids.append(k)
+                    if c in [Constants.TOKEN_EOS]:
+                        k += 1
+                tokens = self.tokenizer.convert_tokens_to_ids(tokens)
+                input_mask=[1]*length+[0]*(self.max_tokens-length)
+                tokenses.append(tokens)
+                input_maskes.append(input_mask)
+                type_idses.append(type_ids)
+                lengthes.append(length)
+        tokenses, input_maskes, type_idses, lengthes= [np.array(x) for x in [tokenses,input_maskes,type_idses,lengthes]]
+        return  tokenses,input_maskes,type_idses,lengthes,label
 
 def seg(line):
     segs={}
@@ -161,15 +162,16 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 1024,
-        # "batch_size":16,
+        "batch_size":1,
+        "num_workers":0,
         # "learning_rate": 5e-5,
-        # "logging_steps": 100,
-        # "save_steps": 1000,
+        "logging_steps": 50000,
+        "save_steps": 50000,
         "train_file":"train.txt",
         "valid_file":"dev.txt",
         "test_file":"test.txt",
         "TaskDataset":TaskDataset,
-        "n_class": 10,
+        "num_labels": 10,
         "labels":labels
         # "per_gpu_train_batch_size": 16,
         # "per_gpu_eval_batch_size": 16,

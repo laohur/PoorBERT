@@ -40,16 +40,16 @@ class TaskPoor:
         self.test_dataset=None
 
     def load_model(self, model_path ):
-        bert_config = BertConfig.from_pretrained(model_path,num_labels=len(self.labels),finetuning_task=self.task_name)
+        bert_config = BertConfig.from_pretrained(model_path, num_labels=self.config.num_labels, finetuning_task=self.task_name)
         logger.info(f" loadding {model_path} ")
-        if   self.config.output_mode == "classification":
-            model = BertForSequenceClassification.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
+        if self.config.task_name in ["c3", "chid"]:
+            model = BertForMultipleChoice.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
         elif self.config.output_mode == "span":
             model = BertForTokenClassification.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
         elif self.config.output_mode == "qa":
             model = BertForQuestionAnswering.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
-        elif self.config.task_name in ["c3","chid"]:
-            model = BertForMultipleChoice.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
+        elif   self.config.output_mode == "classification":
+            model = BertForSequenceClassification.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
 
         model.to(self.config.device)
         return model
@@ -93,7 +93,7 @@ class TaskPoor:
             pbar = ProgressBar(n_total=len(dataloader), desc=f"{input_file[-20:]}")
             for step, batch in enumerate(dataloader):
                 loss=self.train_batch(batch,args,optimizer,scheduler,step)
-                msg={ "epoch":float(epoch), "global_step":float(self.global_step),"loss": loss ,"lr": float(scheduler.get_last_lr()[0]),"seq_len":batch[0].shape[1]   }
+                msg={ "epoch":float(epoch), "global_step":float(self.global_step),"loss": loss ,"lr": float(scheduler.get_last_lr()[0]),"seq_len":batch[0].shape[-1]   }
                 pbar(step, msg)
                 tr_loss += loss
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and (self.global_step % args.logging_steps == 0 or step+1==len(dataloader)  ):

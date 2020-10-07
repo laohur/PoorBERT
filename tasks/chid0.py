@@ -9,7 +9,7 @@ sys.path.append(".")
 import numpy as np
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
 from configs import Constants
-from tasks.utils import truncate_pair, TaskConfig, truncate_one, index_of, find_span
+from tasks.utils import truncate_pair, TaskConfig, truncate_one, index_of, find_span, rebanlance
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -22,27 +22,45 @@ class Task(TaskPoor):
 
     # def load_model(self, model_path ):
     #     return super().load_model_seq(model_path)
-
     def predict(self):
         preds=self.infer()
         result={}
         for i,pred in enumerate(preds):
-        # for i,item in enumerate(self.test_dataset.doc):
-            id, idiom, left, right, candidates,label =self.test_dataset.doc[i]
+            id, option, left, right, label = self.test_dataset.doc[i]
+            # label=str(label_map[preds[i]])
             if id not in result:
-                result[id]=0
-            if pred==1 : #True
-                for j in range(len(candidates)):
-                    if candidates[j]==idiom:
-                        label=j
-                        result[id]=label
+                result[id]=[]
+            result[id].append(pred)
 
-        # label_map = {i: label for i, label in enumerate(self.labels)}
+        label_map = {i: label for i, label in enumerate(self.labels)}
         with open(self.config.output_submit_file, "w") as writer:
-            # json.dump(result,writer,ensure_ascii=False)
-            writer.write(json.dumps(result, indent=4, ensure_ascii=False) + "\n")
-
+            for k,vs in result.items():
+                l=0
+                for i in range(len(vs)):
+                    if vs[i]==1:
+                        l=i
+                json_d = { "id":k, "label":l  }
+                writer.write(json.dumps(json_d) + '\n')
         logger.info(f" test : {len(preds)}  examples  --> {self.config.output_submit_file}")
+
+    # def predict(self):
+    #     preds=self.infer()
+    #     result={}
+    #     for i,pred in enumerate(preds):
+    #     # for i,item in enumerate(self.test_dataset.doc):
+    #         id, option, left, right, label =self.test_dataset.doc[i]
+    #         if id not in result:
+    #             result[id]=0
+    #         if pred==1 : #True
+    #             for j in range(len(candidates)):
+    #                 if candidates[j]==idiom:
+    #                     label=j
+    #                     result[id]=label
+    #     # label_map = {i: label for i, label in enumerate(self.labels)}
+    #     with open(self.config.output_submit_file, "w") as writer:
+    #         # json.dump(result,writer,ensure_ascii=False)
+    #         writer.write(json.dumps(result, indent=4, ensure_ascii=False) + "\n")
+    #     logger.info(f" test : {len(preds)}  examples  --> {self.config.output_submit_file}")
 
 class TaskDataset(Dataset):
     def __init__(self,input_file,labels,tokenizer,max_tokens,config):
@@ -66,15 +84,21 @@ class TaskDataset(Dataset):
         lens=[]
         for line in doc0:
             item=json.loads(line.strip())
-            # id,a,q,c=item['id'] ,item["answer"],item["question"],item["context"]
-            id, idiom, left, right, candidates, label = item["id"],item["idiom"],item["left"],item["right"], item["candidates"], item["label"]
-            doc.append([id, idiom, left, right, candidates,label ])
-            label_prob[label]=label_prob.get(label,0)+1
-            lens.append(len(left)+len(right))
-        long=max(lens)  #602
+            id, answer, left, right, candidates= item["id"],item["answer"],item["left"],item["right"], item["candidates"]
+            if "train" in input_file:
+                random.shuffle(candidates)
+            for i,option in enumerate(candidates):
+                if option==answer:
+                    label=1
+                else:
+                    label=0
+                doc.append([id, option, left, right,label ])
+                lens.append(len(left)+len(right)+len(option))
+                label_prob[label] = label_prob.get(label, 0) + 1
+        long=max(lens)  #606
         print(f" longest {long} ")
         if "train" in input_file:
-            doc += self.rebanlance(doc, label_prob)
+            doc += rebanlance(doc, label_prob)
         label_prob1 = {}
         for item in doc:
             label = item[-1]
@@ -87,9 +111,9 @@ class TaskDataset(Dataset):
     def __getitem__(self, idx):
         items=self.doc[idx]
         if self.config.task_name=="chid0":
-            id, idiom, left, right, candidates, label=items
-            [ idiom, left, right]=[ self.tokenizer.tokenize(x) for x in ( idiom, left, right) ]
-            tokens=[Constants.TOKEN_CLS]+[Constants.TOKEN_BOS]+idiom+[Constants.TOKEN_EOS,Constants.TOKEN_BOS]+left+[Constants.TOKEN_MASK]*4+right+[Constants.TOKEN_EOS]
+            id, option, left, right, label=items
+            [ option, left, right]=[ self.tokenizer.tokenize(x) for x in ( option, left, right) ]
+            tokens=[Constants.TOKEN_CLS]+[Constants.TOKEN_BOS]+option+[Constants.TOKEN_EOS,Constants.TOKEN_BOS]+left+[Constants.TOKEN_MASK]*4+right+[Constants.TOKEN_EOS]
 
         length=len(tokens)
         tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
@@ -125,16 +149,10 @@ def preprocess0(src1,src2,target):
         for sent in content:
             segs=seg(sent)
             for k, v in segs.items():
-                real = ""
+                answer = ""
                 if src2:
-                    real = candidates[ans[k]]
-                for idiom in candidates:
-                    if idiom==real:
-                        label=1
-                    else:
-                        label=0
-
-            example={ "id":k,'label':label,"idiom":idiom,"left":v[0],"right":v[1],"candidates":candidates}
+                    answer = candidates[ans[k]]
+            example={ "id":k,'answer':answer,"left":v[0],"right":v[1],"candidates":candidates}
             doc.append(json.dumps(example,ensure_ascii=False))
 
     with open(target,"w") as f:
@@ -173,10 +191,10 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 1024,
-        # "batch_size":16,
+        "batch_size":10,
         # "learning_rate": 5e-5,
-        # "logging_steps": 100,
-        # "save_steps": 1000,
+        "logging_steps": 50000,
+        "save_steps": 50000,
         "train_file":"train.txt",
         "valid_file":"dev.txt",
         "test_file":"test.txt",

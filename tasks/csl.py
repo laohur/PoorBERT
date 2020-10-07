@@ -1,19 +1,10 @@
 import sys
-
-from tasks import utils
-
 sys.path.append("..")
 sys.path.append(".")
+from tasks import utils
 import json
 import logging
-import os
-import random
-
-import numpy as np
-import torch
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
-
-from callback.progressbar import ProgressBar
 from configs import Constants
 from tasks.utils import truncate_pair, TaskConfig, truncate_one
 from tasks.task import TaskPoor
@@ -30,7 +21,6 @@ class Task(TaskPoor):
     #     return super().load_model_seq(model_path)
 
     def predict(self):
-
         preds=self.infer()
         label_map = {i: label for i, label in enumerate(self.labels)}
         with open(self.config.output_submit_file, "w") as writer:
@@ -76,7 +66,7 @@ class TaskDataset(Dataset):
             label_prob[l] = label_prob.get(l, 0) + 1
             lens.append(len(a)+len(b))
         long=max(lens)  #1545
-        print(f" longest {long} ")
+        print(f" longest {long} label_prob {label_prob}")
         if "train" in input_file:
             doc += utils.rebanlance(doc, label_prob)
         label_prob1 = {}
@@ -126,7 +116,7 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "max_len": 1024,
         # "batch_size":8,
-        # "output_dir": outputs + f"{model_name}/task_output",
+        "num_workers":4,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,

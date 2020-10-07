@@ -8,7 +8,7 @@ sys.path.append("..")
 sys.path.append(".")
 
 
-def rebanlance(self, doc, label_prob):
+def rebanlance( doc, label_prob):
     for k in label_prob.keys():
         label_prob[k] = label_prob[k] * len(label_prob) / len(doc)
     expand = []
@@ -80,6 +80,22 @@ def collate_cls(batch):
 
     return (torch.LongTensor(all_input_ids) , torch.LongTensor(all_attention_mask), torch.LongTensor(type_ids), torch.LongTensor(all_labels))
 
+def collate_choices(batch):
+    """
+    batch should be a list of (sequence, target, length) tuples...
+    Returns a padded tensor of sequences sorted from longest to shortest,
+    """
+    all_input_ids,all_attention_mask,type_ids, all_lens, all_labels=zip(*batch)
+    max_len = max(max(lengths) for lengths in all_lens)
+    all_input_ids = np.array(all_input_ids)[:,:, :max_len]
+    if isinstance(all_labels[0],np.ndarray):
+        all_labels = np.array(all_labels)[:,:, :max_len]
+    all_attention_mask = np.array(all_attention_mask)[:,:, :max_len]
+    type_ids = np.array(type_ids)[:,:, :max_len]
+
+    return (torch.LongTensor(all_input_ids) , torch.LongTensor(all_attention_mask), torch.LongTensor(type_ids), torch.LongTensor(all_labels))
+
+
 
 class TaskConfig:
     """ Hyperparameters for training """
@@ -93,10 +109,10 @@ class TaskConfig:
     vocab_file="config/vocab.txt"
     bujian_file="config/bujian.txt"
     noise=0
-    n_class=2
+    num_labels=2
     max_len=1024
     batch_size: int = 6
-    gradient_accumlengthulation_steps=1
+    gradient_accumulation_steps=1
     learning_rate = 2.5e-5 # learning rate
     n_epochs: int = 5 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
@@ -138,6 +154,8 @@ class TaskConfig:
             setattr(self,k,v)
         if self.output_mode=="qa":
             self.collate_fn=collate_qa
+        elif self.task_name in ["chid","c3"]:
+            self.collate_fn=collate_choices
         else:
             self.collate_fn=collate_cls
         model_dir='/media/u/t1/dataset/PoorBERT/'
