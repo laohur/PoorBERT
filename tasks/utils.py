@@ -133,7 +133,7 @@ class TaskConfig:
     weight_decay=0.01
 
     pin_memory = True
-    num_workers=0
+    num_workers=4
     timeout=1
     no_cuda=False
     n_gpu=1

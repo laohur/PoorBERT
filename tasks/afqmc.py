@@ -1,9 +1,7 @@
 import sys
-
-from tasks import utils
-
 sys.path.append("..")
 sys.path.append(".")
+from tasks import utils
 import json
 import logging
 import random
@@ -128,7 +126,7 @@ if __name__ == "__main__":
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 256,
         # "batch_size":50,
-        "num_workers":4,
+        # "num_workers":4,
         # "learning_rate": 0.9e-5,
         # "n_epochs": 10,
         # "logging_steps": 100,

@@ -116,7 +116,7 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "max_len": 1024,
         # "batch_size":8,
-        "num_workers":4,
+        # "num_workers":4,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,

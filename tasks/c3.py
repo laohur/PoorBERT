@@ -1,9 +1,7 @@
 import sys
-
-import numpy as np
-
 sys.path.append("..")
 sys.path.append(".")
+import numpy as np
 import json
 import logging
 import os
@@ -169,7 +167,7 @@ if __name__ == "__main__":
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 1024,
         "batch_size":1,
-        "num_workers":0,
+        # "num_workers":0,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,
         # "save_steps": 1000,

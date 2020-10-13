@@ -1,5 +1,4 @@
 import sys
-
 sys.path.append("..")
 sys.path.append(".")
 import json
@@ -8,7 +7,7 @@ import os
 import random
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
 from configs import Constants
-from tasks.utils import truncate_pair, truncate_one, rebanlance
+from tasks.utils import truncate_pair, truncate_one, rebanlance, TaskConfig
 from tasks.task import TaskPoor
 
 logger = logging.getLogger(__name__)
@@ -189,9 +188,9 @@ if __name__ == "__main__":
         # "per_gpu_train_batch_size": 16,
         # "per_gpu_eval_batch_size": 16,
     }
-    # taskConfig=TaskConfig(config)
-    # preprocess(taskConfig.data_dir)
+    taskConfig=TaskConfig(config)
+    preprocess(taskConfig.data_dir)
 
-    task=Task(config)
-    task.train()
-    task.predict()
+    # task=Task(config)
+    # task.train()
+    # task.predict()

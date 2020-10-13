@@ -153,7 +153,7 @@ class TaskPoor:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
-        if (step + 1) % args.gradient_accumlengthulation_steps == 0:
+        if (step + 1) % args.gradient_accumulation_steps == 0:
             optimizer.step()
             scheduler.step()  # Update learning rate schedule
             model.zero_grad()
