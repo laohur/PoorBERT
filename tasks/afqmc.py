@@ -125,7 +125,7 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 256,
-        # "batch_size":50,
+        "batch_size":16,
         # "num_workers":4,
         # "learning_rate": 0.9e-5,
         # "n_epochs": 10,

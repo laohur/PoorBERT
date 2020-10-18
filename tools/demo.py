@@ -13,7 +13,7 @@ num_train_optimization_steps = int(total_train_examples * steps)
 batch_size=total_train_examples/num_train_optimization_steps
 files = []
 files += glob.glob(r"/media/u/t1/data/tokened/*/*.txt")
-# files+=glob.glob(r"/media/u/t1/data/self/*/*.txt")
+files+=glob.glob(r"/media/u/t1/data/self/*/*.txt")
 files += glob.glob(r"/media/u/t1/data/qa/*/*.txt")
 # files=np.random.choice(files,100,replace=False)
 # files.sort()

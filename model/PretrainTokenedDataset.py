@@ -123,7 +123,7 @@ class PretrainTokenedDataset(Dataset):
     doc=self.folder[docid]
     rand=random.random()
     relation_lable=0
-    if rand<=0.5 or len(doc)==1 :  # ->
+    if rand<=0.2 or len(doc)==1 :  # ->
     # if True:
       couplea, coupleb=self.grab1(doc,lno,max_len=self.max_tokens-5)
       if not coupleb:
@@ -137,7 +137,7 @@ class PretrainTokenedDataset(Dataset):
         char_label = [0] + couplea[2] + [0]+ [0] + coupleb[2] + [0]
         word_label = [0] + couplea[3] + [0]+ [0] + coupleb[3] + [0]
 
-    elif rand<0.6 and lno>=1 : #<-
+    elif rand<0.4 and lno>=1 : #<-
       couplea, coupleb=self.grab1(doc,lno,max_len=self.max_tokens-5)
       if not coupleb:
         tokens= [Constants.TOKEN_BOS] + couplea[0] + [Constants.TOKEN_EOS]
@@ -151,7 +151,7 @@ class PretrainTokenedDataset(Dataset):
         char_label = [0] + couplea[2] + [0]+ [0] + coupleb[2] + [0]
         word_label = [0] + couplea[3] + [0]+ [0] + coupleb[3] + [0]
         relation_lable=1
-    elif rand<0.7 and lno>=1:  # before
+    elif rand<0.6 and lno>=1:  # before
         lnob=random.randint(0,lno-1)
         couplea, coupleb=self.grab2(doc,lno,doc,lnob,max_len=self.max_tokens-5)
         # tokens, char_label, word_label=(  (couplea[x]+coupleb[x])   for x in range(3)  )

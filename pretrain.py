@@ -39,7 +39,7 @@ def train_tokened(model,batch,config):
     word_struct_loss = loss_fct(word_score.view(-1, 2), word_label_ids.reshape(-1))
     sentence_relation_loss0 = loss_fct(seq_relationship_score[0].view(-1, 5), relation_ids.view(-1))
     sentence_relation_loss1 = loss_fct(seq_relationship_score[1].view(-1, 5), relation_ids.view(-1))
-    loss = 2*masked_lm_loss0+masked_lm_loss1 + char_struct_loss + word_struct_loss + 2*sentence_relation_loss0+sentence_relation_loss1   # bert
+    loss = masked_lm_loss0+masked_lm_loss1 + char_struct_loss + word_struct_loss + sentence_relation_loss0+sentence_relation_loss1   # bert
 
     if config.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu.
@@ -69,7 +69,7 @@ def train_self(model,batch,config):
     masked_lm_loss1 = loss_fct(prediction_scores[1].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
     sentence_relation_loss0 = loss_fct(seq_relationship_score[0].view(-1, 5), relation_ids.view(-1))
     sentence_relation_loss1 = loss_fct(seq_relationship_score[1].view(-1, 5), relation_ids.view(-1))
-    loss = 2*masked_lm_loss0+masked_lm_loss1 + 2*sentence_relation_loss0+sentence_relation_loss1
+    loss = masked_lm_loss0+masked_lm_loss1 + sentence_relation_loss0+sentence_relation_loss1
 
     if config.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu.
@@ -99,7 +99,7 @@ def train_qa(model,batch,config):
     masked_lm_loss1 = loss_fct(prediction_scores[1].view(-1, bert_config.vocab_size), lm_label_ids.view(-1))
     qa_loss0 = loss_fct(qa_score[0].view(-1, 2), fake_ids.view(-1))
     qa_loss1 = loss_fct(qa_score[1].view(-1, 2), fake_ids.view(-1))
-    loss = 2*masked_lm_loss0+masked_lm_loss1 + 2*qa_loss0+qa_loss1
+    loss = masked_lm_loss0+masked_lm_loss1 + qa_loss0+qa_loss1
 
     if config.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu.
@@ -228,7 +228,7 @@ def train_after(step,start_time,tokenizer, batch_size,msg,n_total,config):
 
 class PretrainConfig:
     seed=42
-    num_workers: int = 4
+    num_workers: int = 6
     timeout=1
     pin_memory = True
 
@@ -245,7 +245,7 @@ class PretrainConfig:
 
     max_len=128
     train_batch_size=32
-    total_train_examples=33e7  # 5m~=8000lines   1g~=E7
+    total_train_examples=151e7  # 5m~=8000lines   1g~=E7  33
     gradient_accumulation_steps=1
 
     global_step:int =0
@@ -311,14 +311,12 @@ if __name__ == '__main__':
 
     probs = [0.2, 0.2, 0.2, 0.2, 0.2]
     lens = [1024, 512, 256, 128, 64]
-    sizes = [7, 18, 44, 97, 208]
+    sizes = [8, 20, 44, 97, 208]
     steps=0
     for i, p in enumerate(probs):
         steps+=probs[i]/sizes[i]
     num_train_optimization_steps=int(config.total_train_examples*steps)
     config.train_batch_size=int(config.total_train_examples/num_train_optimization_steps)
-    # config.train_batch_size = config.train_batch_size // config.gradient_accumulation_steps
-    # num_train_optimization_steps = int( config.total_train_examples / config.train_batch_size / config.gradient_accumulation_steps)
     if config.local_rank != -1:
         num_train_optimization_steps = num_train_optimization_steps // torch.distributed.get_world_size()
     config.warmup_steps = int(num_train_optimization_steps * config.warmup_proportion)
@@ -378,7 +376,7 @@ if __name__ == '__main__':
     for epoch in range(config.epochs):
         files=[]
         files+=glob.glob(r"/media/u/t1/data/tokened/*/*.txt")
-        # files+=glob.glob(r"/media/u/t1/data/self/*/*.txt")
+        files+=glob.glob(r"/media/u/t1/data/self/*/*.txt")
         files+=glob.glob(r"/media/u/t1/data/qa/*/*.txt")
         # files=np.random.choice(files,100,replace=False)
         logger.info(  f" \n\n ==== training {len(files)} files ==== \n")  #13000
@@ -398,6 +396,7 @@ if __name__ == '__main__':
                 logger.info(f" {file_path} file size {os.path.getsize(file_path)}  too small")
                 continue
             idx = np.random.choice(a=len(probs), size=1, replace=False, p=probs)[0]
+            # idx=1
             config.max_len = lens[idx]
             config.train_batch_size = sizes[idx]
             # config.train_batch_size = int(config.train_batch_size * 0.2)

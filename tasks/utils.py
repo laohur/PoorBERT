@@ -87,7 +87,7 @@ def collate_choices(batch):
     """
     all_input_ids,all_attention_mask,type_ids, all_lens, all_labels=zip(*batch)
     max_len = max(max(lengths) for lengths in all_lens)
-    all_input_ids = np.array(all_input_ids)[:,:, :max_len]
+    all_input_ids = np.array(all_input_ids)[:, :, :max_len]
     if isinstance(all_labels[0],np.ndarray):
         all_labels = np.array(all_labels)[:,:, :max_len]
     all_attention_mask = np.array(all_attention_mask)[:,:, :max_len]
@@ -114,7 +114,7 @@ class TaskConfig:
     batch_size: int = 6
     gradient_accumulation_steps=1
     learning_rate = 2.5e-5 # learning rate
-    n_epochs: int = 5 # the number of epoch
+    n_epochs: int = 10 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
     warmup_proportion: float = 0.1

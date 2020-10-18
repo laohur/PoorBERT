@@ -155,7 +155,7 @@ if __name__ == "__main__":
         # "bujian_file": outputs + f"{model_name}/bujian.txt",
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "max_len": 1024,
-        # "batch_size":7,
+        # "batch_size":6,
         # "output_dir": outputs + f"{model_name}/task_output",
         # "learning_rate": 5e-5,
         # "n_epochs": 10,
