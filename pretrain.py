@@ -235,7 +235,7 @@ class PretrainConfig:
     noise = 0
     epochs = 1
     do_lower_case=True
-    learning_rate=1e-4
+    learning_rate=2e-4
     warmup_proportion=0.1
     num_eval_steps=1000
     num_save_steps=5000

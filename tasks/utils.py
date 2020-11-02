@@ -113,7 +113,7 @@ class TaskConfig:
     max_len=1024
     batch_size: int = 6
     gradient_accumulation_steps=1
-    learning_rate = 2.5e-5 # learning rate
+    learning_rate = 2e-5 # learning rate
     n_epochs: int = 10 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
