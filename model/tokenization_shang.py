@@ -76,7 +76,7 @@ def shake(line, vocab,noise=0):
   return ''.join(seq),True
 
 class ShangTokenizer(object):
-  def __init__(self,vocab_path="configs/vocab.txt", bujian_path="configs/bujian.txt",use_bujian=True):
+  def __init__(self,vocab_path="configs/vocab.txt", bujian_path="configs/bujian.txt",use_bujian=False):
     self.vocab=load_vocab(vocab_path)
     self.idx2word={}
     for word,idx in self.vocab.items():

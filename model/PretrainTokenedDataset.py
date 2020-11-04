@@ -28,11 +28,12 @@ logging.basicConfig(format=FORMAT,level=logging.INFO)
 
 
 class PretrainTokenedDataset(Dataset):
-  def __init__(self, input_file, tokenizer,noise=0.01,task='self', max_tokens=256):
+  def __init__(self, input_file, tokenizer,use_relation=False,task='self', max_tokens=256):
     task_dict = {'self': 0, 'answer': 1, 'question': 2}
     self.taskid=task_dict.get(task, Constants.TASK_SELF)
     self.tokenizer = tokenizer
     self.max_tokens = max_tokens
+    self.use_relation=use_relation
     self.input_file=input_file
     self.folder=self.load_file(input_file)
     self.total_lines=sum( [ len(x) for x in self.folder  ] )
@@ -114,17 +115,14 @@ class PretrainTokenedDataset(Dataset):
 
   def __getitem__(self, idx):
     ( tokens,input_mask,type_ids,token_label,char_label,word_label,length,relation_lable) =self.self_feature(idx)
-    # return (np.array(tokens),np.array(input_mask),np.array(type_ids),np.array(token_label),np.array(char_label),np.array(word_label),length,relation_lable)
     return  (tokens, input_mask, type_ids, token_label, char_label, word_label, length, relation_lable)
-
 
   def self_feature(self, idx):
     docid,lno=self.lineid2docid(idx)
     doc=self.folder[docid]
     rand=random.random()
     relation_lable=0
-    if rand<=0.2 or len(doc)==1 :  # ->
-    # if True:
+    if  not self.use_relation or rand<=0.2 or len(doc)==1 :  # ->
       couplea, coupleb=self.grab1(doc,lno,max_len=self.max_tokens-5)
       if not coupleb:
         tokens= [Constants.TOKEN_BOS] + couplea[0] + [Constants.TOKEN_EOS]

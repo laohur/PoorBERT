@@ -622,6 +622,7 @@ class BertForPreTraining(BertPreTrainedModel):
         self.char_labeler = nn.Linear(config.hidden_size, self.config.char_lable_size)   # char
         self.word_labeler = nn.Linear(config.hidden_size, self.config.word_lable_size)   # word
         self.qa_labeler = nn.Linear(config.hidden_size, 2)  # qa
+        self.use_gradation=config.use_gradation
 
         self.init_weights()
         self.tie_weights()
@@ -642,17 +643,25 @@ class BertForPreTraining(BertPreTrainedModel):
                             token_type_ids=token_type_ids)
         # return outputs
         sequence_output, pooled_output, hidden_states = outputs[:3]
-        seq2=hidden_states[len(hidden_states)//2]
-        # seq2=hidden_states[-1]
+        layer_id=-1
+        if self.use_gradation:
+            layer_id=len(hidden_states)//2
+        seq2=hidden_states[layer_id]
         pooled2 = self.bert.pooler(seq2)  # layer-2  pooled output
         logits={}
         if Constants.SCORE_MASK in tasks:
             prediction_scores = [self.predictions(sequence_output),self.predictions(seq2)]
             logits[Constants.SCORE_MASK]=prediction_scores
         if Constants.SCORE_CHAR in tasks:
-            logits[Constants.SCORE_CHAR]=self.char_labeler(hidden_states[0])
+            layer_id = -1
+            if self.use_gradation:
+                layer_id = 0
+            logits[Constants.SCORE_CHAR]=self.char_labeler(hidden_states[layer_id])
         if Constants.SCORE_WORD in tasks:
-            logits[Constants.SCORE_WORD]=self.word_labeler(hidden_states[1])
+            layer_id = -1
+            if self.use_gradation:
+                layer_id = 1
+            logits[Constants.SCORE_WORD]=self.word_labeler(hidden_states[layer_id])
         if Constants.SCORE_MODIFY in tasks:
             logits[Constants.SCORE_MODIFY]=[self.modify_labeler(pooled_output),self.modify_labeler(pooled2)]
         if Constants.SCORE_RELATION in tasks:

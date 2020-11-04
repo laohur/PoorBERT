@@ -27,12 +27,13 @@ logging.basicConfig(format=FORMAT,level=logging.INFO)
 
 
 class PretrainQaDataset(Dataset):
-  def __init__(self, input_file, tokenizer,task='answer', max_tokens=256,noise=0):
+  def __init__(self, input_file, tokenizer,task='answer', max_tokens=256,use_relation=False):
     task_dict = {'self': 0, 'answer': 1, 'question': 2}
     self.taskid=task_dict.get(task, Constants.TASK_SELF)
     self.tokenizer = tokenizer
     self.max_tokens = max_tokens
     self.input_file=input_file
+    self.use_relation=use_relation
     self.doc=self.load_file(input_file)
     logger.info(f"PretrainQaDataset {input_file}装载{len(self.doc)}完毕")
 
@@ -60,6 +61,7 @@ class PretrainQaDataset(Dataset):
 
   def __len__(self):
     return len(self.doc)
+
   def collate_fn(self,batch):
     """
     batch should be a list of (sequence, target, length) tuples...
@@ -75,26 +77,19 @@ class PretrainQaDataset(Dataset):
     return (torch.LongTensor(all_input_ids), torch.LongTensor(all_attention_mask),torch.LongTensor(token_type_ids),torch.LongTensor(token_label), torch.LongTensor(relation_lable))
 
   def __getitem__(self, idx):
-    wrong=self.doc[random.randint(0,len(self.doc)-1)]
-    fake=0
-    q, a, c = self.doc[idx//3]
-    rand=random.random()
-    # if False:
-    if rand>0.5:
-      fake=1
-      if rand>0.75:
-        q=wrong[0]
-      else:
-        a=wrong[1]
+    q, a, c = self.doc[idx]
+    fake = 0
+    if self.use_relation:
+      rand=random.random()
+      if rand>0.5:
+        wrong = self.doc[random.randint(0, len(self.doc) - 1)]
+        fake=1
+        if rand>0.75:
+          q=wrong[0]
+        else:
+          a=wrong[1]
 
     qac, input_mask,token_type_ids,length, qac_label= self.qa_features([q,a,c],max_len=self.max_tokens)
-    # qac =torch.LongTensor(np.array(qac))
-    # input_mask=torch.LongTensor(np.array(input_mask))
-    # qac_label=torch.LongTensor(np.array(qac_label))
-    # task_type_id = torch.tensor(qac.shape).new_full(qac.shape, Constants.TASK_QA)
-
-    # return qac , input_mask, qac_label,task_type_id,fake
-    # return np.array(qac),np.array(input_mask),np.array(token_type_ids),np.array(qac_label),length,fake
     return  (qac, input_mask, token_type_ids, qac_label,length,fake)
 
   def qa_features(self,qac,max_len):

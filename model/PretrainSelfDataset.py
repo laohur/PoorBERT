@@ -14,11 +14,12 @@ FORMAT = ' %(filename)s %(lineno)d %(funcName)s %(asctime)-15s  %(message)s'
 logging.basicConfig(format=FORMAT,level=logging.INFO)
 
 class PretrainSelfDataset(Dataset):
-  def __init__(self, input_file, tokenizer,noise=0.01,task='self', max_tokens=256):
+  def __init__(self, input_file, tokenizer,use_relation=False,task='self', max_tokens=256):
     task_dict = {'self': 0, 'answer': 1, 'question': 2}
     self.taskid=task_dict.get(task, Constants.TASK_SELF)
     self.tokenizer = tokenizer
     self.max_tokens = max_tokens
+    self.use_relation=use_relation
     self.input_file=input_file
     self.folder=self.load_file(input_file)
     self.total_lines=sum( [ len(x) for x in self.folder  ] )
@@ -77,7 +78,7 @@ class PretrainSelfDataset(Dataset):
     rand=random.random()
     relation_lable=0
     # 0.2-> 0.2<- 0.2b 0.2a 0.2o
-    if rand<=0.2 or len(doc)==1 :  # ->
+    if not self.use_relation or rand<=0.2 or len(doc)==1 :  # ->
       couplea, coupleb=self.grab1(doc,lno,max_len=self.max_tokens-5)
       if not coupleb:
         tokens= [Constants.TOKEN_BOS] + couplea[0] + [Constants.TOKEN_EOS]
