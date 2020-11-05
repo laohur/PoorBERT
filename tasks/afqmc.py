@@ -1,14 +1,13 @@
 import sys
-sys.path.append("..")
 sys.path.append(".")
-from tasks import utils
+from torch.utils.data.dataset import Dataset
 import json
 import logging
 import random
-from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler
+# from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler
 from configs import Constants
-from tasks.utils import truncate_pair
 from tasks.task import TaskPoor
+from tasks import utils
 
 logger = logging.getLogger(__name__)
 FORMAT = ' %(filename)s %(lineno)d %(funcName)s %(asctime)-15s  %(message)s'
@@ -88,7 +87,7 @@ class TaskDataset(Dataset):
         sentb = self.tokenizer.tokenize(b,noise=self.config.noise)
         label=self.label2idx[l]
 
-        a,b=truncate_pair(senta,sentb,max_len=self.max_tokens-5)
+        a,b=utils.truncate_pair(senta,sentb,max_len=self.max_tokens-5)
         tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]
         length=len(tokens)
         tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)

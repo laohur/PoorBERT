@@ -25,3 +25,28 @@ https://github.com/laohur/albert_pytorch
 
 ### clue
 * "/media/u/t1/dataset/CLUEdatasets/" 
+
+## mode
+
+models/tokenization_shang.py -> ShangTokenizer.use_bujian=False
+models/modeling_poor.py -> BertForPreTraining.forward() last layer
+
+models/PretrainTokenedDataset.py -> PretrainTokenedDataset.use_relations=False
+models/PretrainSelfDataset.py -> PretrainSelfDataset.use_relations=False
+models/PretrainQaDataset.py -> PretrainQaDataset.use_relations=False
+
+### none
+pretrain.py OUTPUTS_DIR -> PoorNone
+tasks/utils.pt model_dir -> PoorNone
+
+### bujian
+pretrain.py OUTPUTS_DIR -> PoorBujian
+tasks/utils.pt model_dir -> PoorBujian
+
+### relation
+pretrain.py OUTPUTS_DIR -> PoorRelation
+tasks/utils.pt model_dir -> PoorRelation
+
+### gradation
+pretrain.py OUTPUTS_DIR -> PoorGradation
+tasks/utils.pt model_dir -> PoorGradation

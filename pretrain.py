@@ -123,15 +123,15 @@ def train(model,tokenizer,file_path,config):
     if "tokened" in file_path:
         train_epoch=train_tokened
         tag="tokened"
-        epoch_dataset = PretrainTokenedDataset(input_file=file_path, tokenizer=tokenizer, task='self', max_tokens=config.max_len)
+        epoch_dataset = PretrainTokenedDataset(input_file=file_path, tokenizer=tokenizer, task='self', max_tokens=config.max_len,use_relation=config.use_relation)
     elif "self" in file_path:
         train_epoch=train_self
         tag="self"
-        epoch_dataset = PretrainSelfDataset(input_file=file_path, tokenizer=tokenizer, task='self', max_tokens=config.max_len)
+        epoch_dataset = PretrainSelfDataset(input_file=file_path, tokenizer=tokenizer, task='self', max_tokens=config.max_len,use_relation=config.use_relation)
     elif "qa" in file_path:
         train_epoch=train_qa
         tag="qa"
-        epoch_dataset = PretrainQaDataset(input_file=file_path,tokenizer=tokenizer,max_tokens=config.max_len)
+        epoch_dataset = PretrainQaDataset(input_file=file_path,tokenizer=tokenizer,max_tokens=config.max_len,use_relation=config.use_relation)
 
     if config.local_rank == -1:
         train_sampler = RandomSampler(epoch_dataset)
@@ -204,8 +204,8 @@ def train_after(step,start_time,tokenizer, batch_size,msg,n_total,config):
             start_time = now
             config.last_time=time.time()
 
-    # if config.local_rank in [-1, 0] and config.num_save_steps > 0 and  （config.global_step % config.num_save_steps == 0 or step+1==n_total and step>config.num_eval_steps ) :
-    if config.local_rank in [-1, 0] and config.num_save_steps > 0 and (config.global_step % config.num_save_steps == 0 or fid + 1 == len(files)):
+    if config.local_rank in [-1, 0] and config.num_save_steps > 0  and  ( step+1==n_total ):
+    # if config.local_rank in [-1, 0] and config.num_save_steps > 0 and (config.global_step % config.num_save_steps == 0 or fid + 1 == len(files)):
         print()
         # Save model checkpoint
         output_dir = config.output_dir
@@ -227,6 +227,10 @@ def train_after(step,start_time,tokenizer, batch_size,msg,n_total,config):
     return start_time
 
 class PretrainConfig:
+    use_relation=True
+    use_bujian=True
+    use_gradation=True
+
     seed=42
     num_workers: int = 6
     timeout=1
@@ -245,7 +249,6 @@ class PretrainConfig:
 
     max_len=128
     train_batch_size=32
-    total_train_examples=151e7  # 5m~=8000lines   1g~=E7  33
     gradient_accumulation_steps=1
 
     global_step:int =0
@@ -263,6 +266,7 @@ class PretrainConfig:
     bert_config_path=""
     # log_file=""
     # trained_log=""
+    total_train_examples=30e7  # 5m~=8000lines   1g~=E7  30  150
     vocab_path = "configs/vocab.txt"
     bujian_path = "configs/bujian.txt"
     def __init__(self, dic):
@@ -272,6 +276,27 @@ class PretrainConfig:
         self.output_dir=self.outputs
         self.log_file = str(self.output_dir / "train.log")
         self.trained_log = self.output_dir / "trained.log"
+
+        if "poornone" in str(self.output_dir).lower():
+            self.use_relation = False
+            self.use_bujian = False
+            self.use_gradation = False
+        if "relation" in str(self.output_dir).lower():
+            self.use_relation = True
+            self.use_bujian = False
+            self.use_gradation = False
+        elif "bujian" in str(self.output_dir).lower():
+            self.use_relation = False
+            self.use_bujian = True
+            self.use_gradation = False
+        elif "gradation" in str(self.output_dir).lower():
+            self.use_relation = False
+            self.use_bujian = False
+            self.use_gradation = False
+        elif "poorbert" in str(self.output_dir).lower():
+            self.use_relation = True
+            self.use_bujian = True
+            self.use_gradation = True
 
 if __name__ == '__main__':
     BASE_DIR = Path('.')
@@ -312,16 +337,19 @@ if __name__ == '__main__':
     probs = [0.2, 0.2, 0.2, 0.2, 0.2]
     lens = [1024, 512, 256, 128, 64]
     sizes = [8, 20, 44, 97, 208]
-    steps=0
+    # steps=0
+    num_train_optimization_steps=0
     for i, p in enumerate(probs):
-        steps+=probs[i]/sizes[i]
-    num_train_optimization_steps=int(config.total_train_examples*steps)
+        # steps+=probs[i]/sizes[i]
+        num_train_optimization_steps+=int(config.total_train_examples*probs[i]/sizes[i])
+    # num_train_optimization_steps=int(config.total_train_examples*steps)
     config.train_batch_size=int(config.total_train_examples/num_train_optimization_steps)
     if config.local_rank != -1:
         num_train_optimization_steps = num_train_optimization_steps // torch.distributed.get_world_size()
     config.warmup_steps = int(num_train_optimization_steps * config.warmup_proportion)
 
     bert_config = BertConfig.from_pretrained(config.bert_config_path)
+    bert_config.use_gradation=config.use_gradation
     model = BertForPreTraining(config=bert_config)
     config.model_path = str((config.output_dir).absolute())
     if os.path.exists(config.model_path+"/bujian.txt"):
@@ -372,11 +400,11 @@ if __name__ == '__main__':
     with open(trained_log) as f:
         trained_logs=f.readlines()
 
-    tokenizer = ShangTokenizer(vocab_path=config.vocab_path, bujian_path=config.bujian_path)
+    tokenizer = ShangTokenizer(vocab_path=config.vocab_path, bujian_path=config.bujian_path,use_bujian=config.use_bujian)
     for epoch in range(config.epochs):
         files=[]
         files+=glob.glob(r"/media/u/t1/data/tokened/*/*.txt")
-        files+=glob.glob(r"/media/u/t1/data/self/*/*.txt")
+        # files+=glob.glob(r"/media/u/t1/data/self/*/*.txt")
         files+=glob.glob(r"/media/u/t1/data/qa/*/*.txt")
         # files=np.random.choice(files,100,replace=False)
         logger.info(  f" \n\n ==== training {len(files)} files ==== \n")  #13000
@@ -399,7 +427,7 @@ if __name__ == '__main__':
             # idx=1
             config.max_len = lens[idx]
             config.train_batch_size = sizes[idx]
-            # config.train_batch_size = int(config.train_batch_size * 0.2)
+            config.train_batch_size = int(config.train_batch_size * 0.7)
 
             t0=time.time()
             logger.info(f" fid {fid} folder {len(files)}  max_len {config.max_len} batch_size {config.train_batch_size} gradient_accumulation_steps {config.gradient_accumulation_steps}")

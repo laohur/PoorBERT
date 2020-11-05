@@ -4,7 +4,6 @@ import random
 import numpy as np
 import torch
 import sys
-sys.path.append("..")
 sys.path.append(".")
 
 
@@ -98,6 +97,10 @@ def collate_choices(batch):
 
 
 class TaskConfig:
+    use_bujian=True
+    # use_relation=True
+    # use_gradation=True
+
     """ Hyperparameters for training """
     # seed: int = 42 # random seed
     task_name="task"
@@ -114,7 +117,7 @@ class TaskConfig:
     batch_size: int = 6
     gradient_accumulation_steps=1
     learning_rate = 2e-5 # learning rate
-    n_epochs: int = 10 # the number of epoch
+    n_epochs: int = 1 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
     warmup_proportion: float = 0.1
@@ -134,6 +137,7 @@ class TaskConfig:
 
     pin_memory = True
     num_workers=4
+    # num_workers=0
     timeout=1
     no_cuda=False
     n_gpu=1
@@ -179,6 +183,8 @@ class TaskConfig:
         if not os.path.exists(submit_dir):
             os.makedirs(submit_dir)
         self.output_submit_file = os.path.join(submit_dir, f"{self.task_name}_prediction.json")
+        if "use_bujian" in str(model_dir).lower() or "poorbert" in str(model_dir).lower() :
+            self.use_bujian=True
 
     @classmethod
     def from_dict(cls, dic): # load config from json

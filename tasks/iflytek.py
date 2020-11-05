@@ -1,5 +1,4 @@
 import sys
-sys.path.append("..")
 sys.path.append(".")
 from tasks import utils
 import json
@@ -121,7 +120,7 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 1024,
-        # "batch_size":8,
+        "batch_size":4,
         # "num_workers":4,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,

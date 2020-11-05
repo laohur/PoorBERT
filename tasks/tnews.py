@@ -1,12 +1,10 @@
 import sys
-sys.path.append("..")
 sys.path.append(".")
 from tasks import utils
 import json
 import logging
 import os
-import random
-from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
+from torch.utils.data import Dataset
 from configs import Constants
 from tasks.utils import truncate_pair, TaskConfig, truncate_one
 from tasks.task import TaskPoor

@@ -2,7 +2,6 @@ import json
 import logging
 import random
 import sys
-sys.path.append("..")
 sys.path.append(".")
 from tasks import utils
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler

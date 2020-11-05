@@ -1,19 +1,19 @@
-import json
-import math
-import os
 import sys
-sys.path.append("..")
 sys.path.append(".")
+
+import json
+import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
 from torch.optim import AdamW
 from callback.lr_scheduler import get_linear_schedule_with_warmup
-# from callback.optimization.adamw import AdamW
 from callback.progressbar import ProgressBar
 from model.configuration_bert import BertConfig
-from model.modeling_poor import BertForPreTraining, BertForSequenceClassification, BertForTokenClassification, BertForQuestionAnswering, BertForMultipleChoice
-from model.tokenization_shang import ShangTokenizer, Sentence
+from model.modeling_poor import BertForMultipleChoice, BertForTokenClassification, BertForQuestionAnswering, BertForSequenceClassification
+from model.tokenization_shang import ShangTokenizer
+# from model.modeling_poor import  BertForSequenceClassification, BertForTokenClassification, BertForQuestionAnswering, BertForMultipleChoice
+# from model.tokenization_shang import ShangTokenizer, Sentence
 from tasks.utils import truncate_pair, TaskConfig, find_span, cal_acc
 from tools.common import logger, init_logger
 
@@ -31,7 +31,7 @@ class TaskPoor:
         self.dataset=self.config.TaskDataset
         self.labels=self.config.labels
 
-        self.tokenizer = ShangTokenizer(vocab_path=self.config.vocab_file, bujian_path=self.config.bujian_file)
+        self.tokenizer = ShangTokenizer(vocab_path=self.config.vocab_file, bujian_path=self.config.bujian_file,use_bujian=self.config.use_bujian)
         # self.valid_dataset=self.load_valid()
         self.acc=0
         self.model = self.load_model(self.config.model_name_or_path)

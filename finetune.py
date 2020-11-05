@@ -1,10 +1,9 @@
 """ Finetuning the library models for sequence classification ."""
-
 from __future__ import absolute_import, division, print_function
-import subprocess
+
 import sys
-sys.path.append("..")
 sys.path.append(".")
+import subprocess
 
 def run_all():
     tasks=["afqmc",'tnews','iflytek','cmnli','wsc','csl','cmrc2018', 'c3','chid']

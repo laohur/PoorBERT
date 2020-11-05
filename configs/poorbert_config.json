@@ -22,5 +22,6 @@
   "char_lable_size": 2,
   "word_lable_size": 2,
   "vocab_size": 6719,
-  "ln_type":"preln"
+  "ln_type":"preln",
+  "use_gradation": false
 }

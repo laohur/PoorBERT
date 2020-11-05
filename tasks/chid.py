@@ -4,7 +4,6 @@ import os
 import random
 import sys
 
-sys.path.append("..")
 sys.path.append(".")
 import numpy as np
 from torch.utils.data import Dataset, DistributedSampler, DataLoader, SequentialSampler, RandomSampler
