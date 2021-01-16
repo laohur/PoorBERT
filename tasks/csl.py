@@ -1,3 +1,4 @@
+import random
 import sys
 sys.path.append(".")
 from tasks import utils
@@ -53,7 +54,9 @@ class TaskDataset(Dataset):
         lens=[]
         for line in doc0:
             item=json.loads(line.strip())
-            a= "、".join(item["keyword"])
+            keywords=item["keyword"]  # acc:0.5598404255319149
+            random.shuffle(keywords) # 0.6505984042553191+
+            a= "|".join(keywords)
             b=item["abst"].strip()
 
             l=item.get("label",self.labels[0])
@@ -83,7 +86,8 @@ class TaskDataset(Dataset):
             senta = self.tokenizer.tokenize(a)
             sentb = self.tokenizer.tokenize(b,noise=self.config.noise)
             a,b=truncate_pair(senta,sentb,max_len=self.max_tokens-5)
-            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]
+            # tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]  #acc:0.5113031914893617 acc:0.5478723404255319
+            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + ["unsued3"] + b + ["unsued3"]  # acc:0.515625 acc:0.5598404255319149
 
         label=self.label2idx[l]
 

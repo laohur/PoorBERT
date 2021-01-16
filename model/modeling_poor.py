@@ -1,7 +1,7 @@
 """PyTorch PoorBERT model. """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import logging
-import math
+import math,copy
 import os
 import sys
 import torch
@@ -16,7 +16,7 @@ from .file_utils import add_start_docstrings
 logger = logging.getLogger(__name__)
 
 BERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'poor-base': "",
+    'poor-small': "",
 }
 
 def load_tf_weights_in_bert(model, config, tf_checkpoint_path):
@@ -289,6 +289,17 @@ class BertEncoder(nn.Module):
         self.output_attentions = config.output_attentions
         self.output_hidden_states = config.output_hidden_states
         self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.use_stair=config.use_stair
+        if self.use_stair:
+            self.now_stair=0
+        else:
+            self.now_stair=len(self.layer)
+
+    def upstair(self,next_stair):
+        if 0<=next_stair<len(self.layer) and self.now_stair+1==next_stair:
+            self.layer[next_stair]=copy.deepcopy(self.layer[self.now_stair])
+            self.now_stair+=1
+        return self.now_stair
 
     def forward(self, hidden_states, attention_mask=None, head_mask=None):
         all_hidden_states = ()
@@ -302,6 +313,8 @@ class BertEncoder(nn.Module):
 
             if self.output_attentions:
                 all_attentions = all_attentions + (layer_outputs[1],)
+            if self.use_stair and i>=self.now_stair :
+                break
 
         # Add last layer
         if self.output_hidden_states:
@@ -513,6 +526,9 @@ class BertModel(BertPreTrainedModel):
 
         self.init_weights()
 
+    def upstair(self,next_stair):
+        return self.encoder.upstair(next_stair)
+
     def _resize_token_embeddings(self, new_num_tokens):
         old_embeddings = self.embeddings.word_embeddings
         new_embeddings = self._get_resized_embeddings(old_embeddings, new_num_tokens)
@@ -622,10 +638,12 @@ class BertForPreTraining(BertPreTrainedModel):
         self.char_labeler = nn.Linear(config.hidden_size, self.config.char_lable_size)   # char
         self.word_labeler = nn.Linear(config.hidden_size, self.config.word_lable_size)   # word
         self.qa_labeler = nn.Linear(config.hidden_size, 2)  # qa
-        self.use_gradation=config.use_gradation
 
         self.init_weights()
         self.tie_weights()
+
+    def upstair(self,next_stair):
+        return self.bert.upstair(next_stair)
 
     def tie_weights(self):
         """ Make sure we are sharing the input and output embeddings.
@@ -644,30 +662,22 @@ class BertForPreTraining(BertPreTrainedModel):
         # return outputs
         sequence_output, pooled_output, hidden_states = outputs[:3]
         layer_id=-1
-        if self.use_gradation:
-            layer_id=len(hidden_states)//2
-        seq2=hidden_states[layer_id]
-        pooled2 = self.bert.pooler(seq2)  # layer-2  pooled output
+        # seq2=hidden_states[layer_id]
+        # pooled2 = self.bert.pooler(seq2)  # layer-2  pooled output
         logits={}
         if Constants.SCORE_MASK in tasks:
-            prediction_scores = [self.predictions(sequence_output),self.predictions(seq2)]
-            logits[Constants.SCORE_MASK]=prediction_scores
+            prediction_score = self.predictions(sequence_output)
+            logits[Constants.SCORE_MASK]=prediction_score
         if Constants.SCORE_CHAR in tasks:
-            layer_id = -1
-            if self.use_gradation:
-                layer_id = 0
-            logits[Constants.SCORE_CHAR]=self.char_labeler(hidden_states[layer_id])
+            logits[Constants.SCORE_CHAR]=self.char_labeler(sequence_output)
         if Constants.SCORE_WORD in tasks:
-            layer_id = -1
-            if self.use_gradation:
-                layer_id = 1
-            logits[Constants.SCORE_WORD]=self.word_labeler(hidden_states[layer_id])
+            logits[Constants.SCORE_WORD]=self.word_labeler(sequence_output)
         if Constants.SCORE_MODIFY in tasks:
-            logits[Constants.SCORE_MODIFY]=[self.modify_labeler(pooled_output),self.modify_labeler(pooled2)]
+            logits[Constants.SCORE_MODIFY]=self.modify_labeler(pooled_output)
         if Constants.SCORE_RELATION in tasks:
-            logits[Constants.SCORE_RELATION] = [self.seq_relationship( pooled_output),self.seq_relationship( pooled2)]
+            logits[Constants.SCORE_RELATION] = self.seq_relationship( pooled_output) 
         if Constants.SCORE_QA in tasks:
-            logits[Constants.SCORE_QA] = [self.qa_labeler(pooled_output),self.qa_labeler(pooled2)]
+            logits[Constants.SCORE_QA] = self.qa_labeler(pooled_output) 
         # outputs = (prediction_scores, seq_relationship_score,char_score,word_score) + outputs[2:]  # add hidden states and attention if they are here
         outputs =[outputs,logits]
 

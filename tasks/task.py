@@ -1,6 +1,6 @@
 import sys
 sys.path.append(".")
-
+from argparse import ArgumentParser
 import json
 import os
 import numpy as np
@@ -31,6 +31,22 @@ class TaskPoor:
         self.dataset=self.config.TaskDataset
         self.labels=self.config.labels
 
+        parser = ArgumentParser()
+        parser.add_argument("--local_rank", type=int, default=-1,  help="local_rank for distributed training on gpus")
+        args = parser.parse_args()
+        self.config.local_rank=   args.local_rank             
+        if self.config.local_rank == -1 or self.config.no_cuda:
+            self.config.device = torch.device("cuda" if torch.cuda.is_available() and not self.config.no_cuda else "cpu")
+            self.config.n_gpu = torch.cuda.device_count()
+        else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
+            torch.cuda.set_device(self.local_rank)
+            self.config.device = torch.device("cuda", args.local_rank)
+            torch.distributed.init_process_group(backend='nccl')
+            self.config.n_gpu = 1        
+        # Load pretrained model and tokenizer
+        if args.local_rank not in [-1, 0]:
+            torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
+           
         self.tokenizer = ShangTokenizer(vocab_path=self.config.vocab_file, bujian_path=self.config.bujian_file,use_bujian=self.config.use_bujian)
         # self.valid_dataset=self.load_valid()
         self.acc=0
@@ -40,7 +56,7 @@ class TaskPoor:
         self.test_dataset=None
 
     def load_model(self, model_path ):
-        bert_config = BertConfig.from_pretrained(model_path, num_labels=self.config.num_labels, finetuning_task=self.task_name)
+        bert_config = BertConfig.from_pretrained(model_path, num_labels=self.config.num_labels, finetuning_task=self.task_name, use_stair=False)
         logger.info(f" loadding {model_path} ")
         if self.config.task_name in ["c3", "chid"]:
             model = BertForMultipleChoice.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
@@ -50,7 +66,9 @@ class TaskPoor:
             model = BertForQuestionAnswering.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
         elif   self.config.output_mode == "classification":
             model = BertForSequenceClassification.from_pretrained(model_path, from_tf=bool('.ckpt' in model_path), config=bert_config)
-
+        if self.config.local_rank == 0:
+            torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
+            
         model.to(self.config.device)
         return model
 
@@ -81,6 +99,22 @@ class TaskPoor:
         optimizer = AdamW(params=optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=num_training_steps)
 
+        if self.config.fp16:
+            try:
+                from apex import amp
+            except ImportError:
+                raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
+            model, optimizer = amp.initialize(model, optimizer, opt_level=self.config.fp16_opt_level)
+
+        # multi-gpu training (should be after apex fp16 initialization)
+        if self.config.n_gpu > 1:
+            model = torch.nn.DataParallel(model)
+
+        # Distributed training (should be after apex fp16 initialization)
+        if self.config.local_rank != -1:
+            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True)
+        self.model=model
+
         if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(args.output_dir)
 
@@ -90,10 +124,10 @@ class TaskPoor:
             dataset = self.dataset(input_file=input_file, tokenizer=self.tokenizer, labels=self.labels, max_tokens=self.config.max_len,config=self.config)
             sampler = RandomSampler(dataset) if args.local_rank == -1 else DistributedSampler(dataset)
             dataloader = DataLoader(dataset, sampler=sampler, batch_size=self.config.batch_size, collate_fn=self.config.collate_fn,pin_memory=self.config.pin_memory, num_workers=self.config.num_workers)
-            pbar = ProgressBar(n_total=len(dataloader), desc=f"{input_file[-20:]}")
+            pbar = ProgressBar(n_total=len(dataloader), desc=f"{input_file[-15:]}")
             for step, batch in enumerate(dataloader):
                 loss=self.train_batch(batch,args,optimizer,scheduler,step)
-                msg={ "epoch":float(epoch), "global_step":float(self.global_step),"loss": loss ,"lr": float(scheduler.get_last_lr()[0]),"seq_len":batch[0].shape[-1]   }
+                msg={ "epoch":epoch, "global_step":self.global_step,"loss": loss ,"lr": scheduler.get_lr(),"seq_len":batch[0].shape[-1]   }
                 pbar(step, msg)
                 tr_loss += loss
                 if args.local_rank in [-1, 0] and args.logging_steps > 0 and (self.global_step % args.logging_steps == 0 or step+1==len(dataloader)  ):
@@ -101,7 +135,7 @@ class TaskPoor:
                     if args.local_rank == -1:  # Only evaluate when single GPU otherwise metrics may not average well
                         acc=self.evaluate(epoch)
 
-                if args.local_rank in [-1, 0] and args.save_steps > 0 and (self.global_step % args.save_steps == 0 or step+1==len(dataloader))and acc>self.acc:
+                if args.local_rank in [-1, 0] and args.save_steps > 0 and (self.global_step % args.save_steps == 0 or step+1==len(dataloader))and acc>=self.acc:
                     logger.info(f"Saving best model acc:{self.acc} -->{acc}")
                     self.acc=acc
                     output_dir = args.output_dir
@@ -115,7 +149,7 @@ class TaskPoor:
             print("\n ")
             if 'cuda' in str(args.device):
                 torch.cuda.empty_cache()
-            msg = {"epoch": float(epoch), "global_step": float(self.global_step), "loss": loss, "average loss":tr_loss, "lr": float(scheduler.get_last_lr()[0])}
+            msg = {"epoch": (epoch), "global_step": (self.global_step), "loss": loss, "average loss":tr_loss, "lr": (scheduler.get_lr())}
             logger.info(   f" {msg}")
 
         logger.info("Saving model checkpoint to %s", args.output_dir)
@@ -156,7 +190,7 @@ class TaskPoor:
         if (step + 1) % args.gradient_accumulation_steps == 0:
             optimizer.step()
             scheduler.step()  # Update learning rate schedule
-            model.zero_grad()
+            optimizer.zero_grad()
             self.global_step += 1
 
         return loss.item()

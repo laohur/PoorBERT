@@ -78,11 +78,6 @@ class TaskDataset(Dataset):
         return self.total_lines
 
     def __getitem__(self, idx):
-        if len(self.doc[idx])==-2:
-            a,l=self.doc[idx]
-            senta = self.tokenizer.tokenize(a)
-            a=truncate_one(senta,max_len=self.max_tokens-3)
-            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS]
         if self.config.task_name=="cmnli":
             a,b,l=self.doc[idx]
             if random.random()<0.5:
@@ -121,7 +116,7 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 256,
-        "batch_size":16,
+        # "batch_size":16,
         # "num_workers":4,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,

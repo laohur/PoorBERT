@@ -56,9 +56,9 @@ class TaskDataset(Dataset):
             item=json.loads(line.strip())
             a=item["sentence"]
             l=item.get("label",self.labels[0])
-            if l not in self.labels:
-                logger.warn(f" error label {line} ")
-                continue
+            # if l not in self.labels:
+            #     logger.warn(f" error label {line} ")
+            #     continue
             a, l = a.strip(), l.strip()
             doc.append([a,l])
             label_prob[l] = label_prob.get(l, 0) + 1
@@ -82,14 +82,6 @@ class TaskDataset(Dataset):
             senta = self.tokenizer.tokenize(a,noise=self.config.noise)
             a=truncate_one(senta,max_len=self.max_tokens-3)
             tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS]
-        if self.config.task_name=="":
-            a,b,l=self.doc[idx]
-            if random.random()<0.5:
-              a,b=b,a
-            senta = self.tokenizer.tokenize(a,noise=self.config.noise)
-            sentb = self.tokenizer.tokenize(b,noise=self.config.noise)
-            a,b=truncate_pair(senta,sentb,max_len=self.max_tokens-5)
-            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]
 
         label=self.label2idx[l]
 
@@ -120,7 +112,8 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 1024,
-        "batch_size":4,
+        # "batch_size":7,
+        # "n_epochs":3,
         # "num_workers":4,
         # "learning_rate": 5e-5,
         # "logging_steps": 100,

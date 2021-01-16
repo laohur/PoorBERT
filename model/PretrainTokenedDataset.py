@@ -9,7 +9,6 @@ import unicodedata
 import random
 import six
 import logging
-import sentencepiece as spm
 from torch.utils.data import Dataset
 import torch
 import numpy as np
@@ -17,7 +16,6 @@ import numpy as np
 from callback.progressbar import ProgressBar
 from configs import Constants
 
-# logger = logging.getLogger(__name__)
 from model.tokenization_shang import Sentence, SentenceWorded
 
 logger = logging.getLogger(__name__)
@@ -122,8 +120,11 @@ class PretrainTokenedDataset(Dataset):
     doc=self.folder[docid]
     rand=random.random()
     relation_lable=0
+    # 0.2自身 0.2下句 0.2上句 0.2下文 0.2下文 0.2他篇
     if  not self.use_relation or rand<=0.2 or len(doc)==1 :  # ->
-      couplea, coupleb=self.grab1(doc,lno,max_len=self.max_tokens-5)
+      # couplea, coupleb=self.grab1(doc,lno,max_len=self.max_tokens-5)
+      couplea, coupleb=self.grab2(doc,lno,doc,lno,max_len=self.max_tokens-5)
+
       if not coupleb:
         tokens= [Constants.TOKEN_BOS] + couplea[0] + [Constants.TOKEN_EOS]
         token_label= [Constants.TOKEN_BOS] + couplea[1] + [Constants.TOKEN_EOS]

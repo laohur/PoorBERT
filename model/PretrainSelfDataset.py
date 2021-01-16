@@ -77,6 +77,7 @@ class PretrainSelfDataset(Dataset):
     doc=self.folder[docid]
     rand=random.random()
     relation_lable=0
+    couplea, coupleb=self.grab2(doc,lno,doc,lno,max_len=self.max_tokens-5)
     # 0.2-> 0.2<- 0.2b 0.2a 0.2o
     if not self.use_relation or rand<=0.2 or len(doc)==1 :  # ->
       couplea, coupleb=self.grab1(doc,lno,max_len=self.max_tokens-5)

@@ -25,12 +25,16 @@ def load_vocab(vocab_path="configs/vocab_shang.txt"):
   logger.info(f" {vocab_path} 原始词汇表 {len(tokens)} --> 加载词汇表{len(vocab.keys())} ")  # configs/vocab_shang.txt 原始词汇表 6717 --> 加载词汇表6717
   return vocab
 
-def load_spliter(doc):
+def load_spliter(bujian_path="configs/bujian.txt"):
+  with open(bujian_path) as f:
+    doc = f.readlines()
+  bujian=[]
+  for l in doc:
+    if l.rstrip('\n'):
+      bujian.append(l.rstrip('\n'))
   spliter = {}
   jianjia = '⿰⿱⿲⿳⿴⿵⿶⿷⿸⿹⿺⿻'
-  # with open(split_path) as f:
-  #   doc = f.readlines()
-  for line in doc:
+  for line in bujian:
     words = line.strip().split("\t")
     if len(words) == 2:
       c, subs = words
@@ -42,7 +46,7 @@ def load_spliter(doc):
       if len(grams) > 4:
         grams = grams[:2] + grams[-2:]
       spliter[c] = grams
-  return spliter
+  return bujian,spliter
 
 def shake(line, vocab,noise=0):
   # insert del replace swap
@@ -81,10 +85,8 @@ class ShangTokenizer(object):
     self.idx2word={}
     for word,idx in self.vocab.items():
       self.idx2word[idx]=word
-    with open(bujian_path) as f:
-      self.bujian=f.readlines()
     self.use_bujian=use_bujian
-    self.spliter=load_spliter(self.bujian)
+    self.bujian,self.spliter=load_spliter(bujian_path)
     self.tokens=list(self.vocab.keys())[self.vocab['\t']:]
 
   def char2bujian(self,c):  # char->list

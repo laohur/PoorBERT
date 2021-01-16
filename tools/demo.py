@@ -1,33 +1,73 @@
-import glob
-
+import math
 import numpy as np
+import matplotlib.pyplot as plt
 
-probs = [0.2, 0.2, 0.2, 0.2, 0.2]
-lens = [1024, 512, 256, 128, 64]
-sizes = [7, 19, 44, 97, 208]
-steps = 0
-for i, p in enumerate(probs):
-    steps += probs[i] / sizes[i]
-total_train_examples=33e7
-num_train_optimization_steps = int(total_train_examples * steps)
-batch_size=total_train_examples/num_train_optimization_steps
-files = []
-files += glob.glob(r"/media/u/t1/data/tokened/*/*.txt")
-files+=glob.glob(r"/media/u/t1/data/self/*/*.txt")
-files += glob.glob(r"/media/u/t1/data/qa/*/*.txt")
-# files=np.random.choice(files,100,replace=False)
-# files.sort()
-steps=0
-for fid, file_path in enumerate(files):
-    idx = np.random.choice(a=len(probs), size=1, replace=False, p=probs)[0]
-    examples=total_train_examples/len(files)
-    max_len = lens[idx]
-    train_batch_size = sizes[idx]
-    steps+= examples/train_batch_size
+class PoorLR(object):
+    def __init__(self,optimizer,base_lr,total_stage,warm_up=0.1):
+        self.base_lr=base_lr
+        self.optimizer = optimizer
+        self.warm_up = warm_up
+        self.total_stage = total_stage-1
+        self.now_stage = -1
+        self.total_stair=1
+        self.now_stair=0
+        # self._lr = 0
+    
+    def get_progress(self):
+        p1=self.now_stage/self.total_stage
+        p2=self.now_stair/self.total_stair
+        p0=1/self.total_stage
+        p=(1-p0)*p1+p0*p2        
+        return p,p1,p2
 
-print( f"num_train_optimization_steps:{num_train_optimization_steps}" )
-print( f"batch_size:{batch_size}" )
-print( f"steps:{steps}" )
-print( f"avg batch size :{total_train_examples/steps}" )
+    def feed(self,total_stair):
+        self.total_stair=total_stair
+        self.now_stage+=1
+        self.now_stair=1        
 
-# 15399975
+    def get_lr(self):
+        p,p1,p2=self.get_progress()
+        # p0=1/self.total_stage
+        # p=(1-p0)*p1+p0*p2
+        # wave=math.sin(math.pi*p2)
+        if p<=self.warm_up:
+            lr0= p/self.warm_up
+        else:
+            lr0=(1-p)/(1-self.warm_up)
+
+        def polish(r):
+            eps=1e-7
+            r=max(eps,r)
+            r=min(1-eps,r)
+            return r
+        lr0=polish(lr0)
+        wave=math.sin(math.pi*p2)
+        lr=lr0*(0.5+wave*0.5)
+
+        return lr*self.base_lr
+        # return lr
+
+    def step(self):
+        self.now_stair+=1
+        lr = self.get_lr()
+        if self.optimizer:
+            for p in self.optimizer.param_groups:
+                p['lr'] = lr
+
+
+total_stage=20
+lines=100
+
+scheduler=PoorLR(None,0.0005,total_stage)
+rates=[]
+for i in range(total_stage):
+    scheduler.feed(lines)
+    for j in range(lines):
+        rates.append(scheduler.get_lr())
+        scheduler.step()
+
+# plt.plot(np.arange(1, 20000), [[opt.rate(i) for opt in opts] for i in range(1, 20000)])
+print(rates)
+plt.plot(np.arange(0,total_stage*lines),rates)
+plt.pause(0)
+c=0

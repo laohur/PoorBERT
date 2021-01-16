@@ -1,7 +1,8 @@
-# python3.6 torch1.4
+# python==3.6.9 cuda==10.2 ubuntu==18.04
 
 sklearn
 boto3
 botocore
-torch
+torch==1.4.0
 numpy
+tqdm

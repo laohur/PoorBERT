@@ -54,7 +54,7 @@ class ProgressBar(object):
             lines=[]
             for key, value in info.items():
                 if isinstance(value,float):
-                    line=f'{key}:{value:.5f}'
+                    line=f'{key}:{value:.6f}'
                 else:
                     line=f'{key}:{value}'
                 lines.append(line)

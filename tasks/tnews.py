@@ -1,4 +1,8 @@
+import random
 import sys
+
+import numpy as np
+
 sys.path.append(".")
 from tasks import utils
 import json
@@ -63,12 +67,13 @@ class TaskDataset(Dataset):
             item=json.loads(line.strip())
             a=item["sentence"]
             # b=""
-            b=item["keywords"]
-            # keywords=b.split(",")
+            b=item["keywords"]    # acc:0.0877
+            keywords=b.split(",")
             # keywords=np.random.choice(keywords,len(keywords)-1)
-            # b="|".join(keywords)
-            # l=item.get("label",self.labels[0])
+            random.shuffle(keywords)
+            b="|".join(keywords)  # acc:0.0863
             l=item.get("label",self.labels[0])
+            # l=item.get("label",self.labels[0])
             a, b, l = a.strip(), b.strip(), l.strip()
             doc.append([a,b,l])
             label_prob[l] = label_prob.get(l, 0) + 1
@@ -90,16 +95,21 @@ class TaskDataset(Dataset):
     def __getitem__(self, idx):
         if self.config.task_name=="tnews":
             a,b,l=self.doc[idx]
-            # if random.random()<0.5:
+            # if random.random()<0.5:   # acc:0.0858
             #   a,b=b,a
             senta = self.tokenizer.tokenize(a,noise=self.config.noise)
-            sentb = self.tokenizer.tokenize(b,noise=self.config.noise)
+
+            # a=truncate_one(senta,max_len=self.max_tokens-3)   # best model acc:0.0825  acc:0.0824  acc:0.0838
+            # tokens = [Constants.TOKEN_CLS, Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS]
+
+            sentb = self.tokenizer.tokenize(b,noise=self.config.noise)   # best model acc:0.0858  "acc": 0.0832  acc:0.0872
             a,b=truncate_pair(senta,sentb,max_len=self.max_tokens-5)
-            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]
-            # tokens = ["unsued0",] + a + ["unsued2","unsued3"] + b + ["unsued4"]
+            # tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]
+
+            tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + ["unsued3"] + b + ["unsued3"]   # acc:0.0877
+            # tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + ["unsued3"] + b + ["unsued4"]  # acc:0.0867
 
         label=self.label2idx[l]
-
         length=len(tokens)
         tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
         type_ids = []
@@ -132,9 +142,9 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 256,
-        "batch_size":16,
+        # "batch_size":16,
         # "num_workers":4,
-        # "learning_rate": 5e-4,
+        # "learning_rate": 5e-5,
         # "n_epochs":  5, # the number of epoch,
         # "logging_steps": 100,
         # "save_steps": 1000,

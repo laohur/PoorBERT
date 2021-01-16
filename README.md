@@ -27,26 +27,23 @@ https://github.com/laohur/albert_pytorch
 * "/media/u/t1/dataset/CLUEdatasets/" 
 
 ## mode
+ [ PoorNone  PoorBujian PoorRelation PoorStair PoorBERT ]
 
-models/tokenization_shang.py -> ShangTokenizer.use_bujian=False
-models/modeling_poor.py -> BertForPreTraining.forward() last layer
+ config in
+* pretrain.py OUTPUTS_DIR -> PoorBERT
+* tasks/utils.pt model_dir -> PoorBERT
 
-models/PretrainTokenedDataset.py -> PretrainTokenedDataset.use_relations=False
-models/PretrainSelfDataset.py -> PretrainSelfDataset.use_relations=False
-models/PretrainQaDataset.py -> PretrainQaDataset.use_relations=False
+  influes:
+* models/tokenization_shang.py -> ShangTokenizer.use_bujian=False
+* models/modeling_poor.py -> BertForPreTraining.forward() last layer
 
-### none
-pretrain.py OUTPUTS_DIR -> PoorNone
-tasks/utils.pt model_dir -> PoorNone
+* models/PretrainTokenedDataset.py -> PretrainTokenedDataset.use_relations=False
+* models/PretrainSelfDataset.py -> PretrainSelfDataset.use_relations=False
+* models/PretrainQaDataset.py -> PretrainQaDataset.use_relations=False
 
-### bujian
-pretrain.py OUTPUTS_DIR -> PoorBujian
-tasks/utils.pt model_dir -> PoorBujian
+## update
+<!-- stair learning -->
+smooth lr
 
-### relation
-pretrain.py OUTPUTS_DIR -> PoorRelation
-tasks/utils.pt model_dir -> PoorRelation
-
-### gradation
-pretrain.py OUTPUTS_DIR -> PoorGradation
-tasks/utils.pt model_dir -> PoorGradation
+## todo
+DistributedDataParallel 

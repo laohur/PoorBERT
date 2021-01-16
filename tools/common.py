@@ -108,7 +108,7 @@ def restore_checkpoint(resume_path, model=None):
     '''
     if isinstance(resume_path, Path):
         resume_path = str(resume_path)
-    checkpoint = torch.load(resume_path)
+    checkpoint = torch.load(resume_path, map_location=torch.device('cpu'))
     best = checkpoint['best']
     start_epoch = checkpoint['epoch'] + 1
     states = checkpoint['state_dict']
@@ -202,7 +202,7 @@ def load_model(model, model_path):
     if isinstance(model_path, Path):
         model_path = str(model_path)
     logging.info(f"loading model from {str(model_path)} .")
-    states = torch.load(model_path)
+    states = torch.load(model_path, map_location=torch.device('cpu'))
     state = states['state_dict']
     if isinstance(model, nn.DataParallel):
         model.module.load_state_dict(state)

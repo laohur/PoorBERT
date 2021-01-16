@@ -80,15 +80,18 @@ class TaskDataset(Dataset):
     def __getitem__(self, idx):
         item=self.doc[idx]
         a,b,l=item
-        if random.random()<0.5:
+        if random.random()<0.5:  #  # acc:0.6902006172839505
             a,b=b,a
-
+        # acc:0.6103395061728395
         senta = self.tokenizer.tokenize(a,noise=self.config.noise)
         sentb = self.tokenizer.tokenize(b,noise=self.config.noise)
         label=self.label2idx[l]
 
         a,b=utils.truncate_pair(senta,sentb,max_len=self.max_tokens-5)
-        tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]
+        tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + [Constants.TOKEN_BOS] + b + [Constants.TOKEN_EOS]  # acc:0.6902006172839505
+        # tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOS] + a + [Constants.TOKEN_EOS] + ["unsued3"] + b + ["unsued3"]  #  acc:0.5960648148148148
+        # tokens = [Constants.TOKEN_CLS,Constants.TOKEN_BOQ] + a + [Constants.TOKEN_EOQ] + [Constants.TOKEN_BOA] + b + [Constants.TOKEN_EOA]  # acc:0.5899691358024691
+
         length=len(tokens)
         tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
         type_ids = []
@@ -124,7 +127,7 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 256,
-        "batch_size":16,
+        # "batch_size":16,
         # "num_workers":4,
         # "learning_rate": 0.9e-5,
         # "n_epochs": 10,

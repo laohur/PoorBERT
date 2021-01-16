@@ -9,7 +9,6 @@ import unicodedata
 import random
 import six
 import logging
-import sentencepiece as spm
 from torch.utils.data import Dataset
 import torch
 import numpy as np

@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import sys
 sys.path.append(".")
+from argparse import ArgumentParser
 
 
 def rebanlance( doc, label_prob):
@@ -24,11 +25,21 @@ def cal_acc(preds, labels):
     score = (p == l).mean()
     return score
 
-def truncate_one( seq, max_len):
+def truncate_one0( seq, max_len):
     seq_len=len(seq)
     if seq_len>max_len:
       # idx = random.randint(0,max_len-1)
       idx = max_len//2 # solid
+      seq=seq[:idx] + seq[-(max_len-idx):]
+    if len(seq)>max_len:
+      assert len(seq)<=max_len
+    return seq
+
+def truncate_one( seq, max_len):
+    seq_len=len(seq)
+    if seq_len>max_len:
+      offset = random.randint(0,max_len//3)
+      idx = max_len//3+offset
       seq=seq[:idx] + seq[-(max_len-idx):]
     if len(seq)>max_len:
       assert len(seq)<=max_len
@@ -113,11 +124,11 @@ class TaskConfig:
     bujian_file="config/bujian.txt"
     noise=0
     num_labels=2
-    max_len=1024
-    batch_size: int = 6
+    max_len=512
+    batch_size: int = 16
     gradient_accumulation_steps=1
-    learning_rate = 2e-5 # learning rate
-    n_epochs: int = 1 # the number of epoch
+    learning_rate = 5e-5 # learning rate
+    n_epochs: int = 5 # the number of epoch
     # `warm up` period = warmup(0.1)*total_steps
     # linearly increasing learning rate from zero to the specified value(5e-5)
     warmup_proportion: float = 0.1
@@ -136,8 +147,7 @@ class TaskConfig:
     weight_decay=0.01
 
     pin_memory = True
-    num_workers=4
-    # num_workers=0
+    num_workers=6
     timeout=1
     no_cuda=False
     n_gpu=1
@@ -156,15 +166,16 @@ class TaskConfig:
     def __init__(self,dic):
         for k,v in dic.items():
             setattr(self,k,v)
+     
         if self.output_mode=="qa":
             self.collate_fn=collate_qa
         elif self.task_name in ["chid","c3"]:
             self.collate_fn=collate_choices
         else:
             self.collate_fn=collate_cls
-        model_dir='/media/u/t1/dataset/PoorBERT/'
+        model_dir='../../dataset/PoorBERT/'
         pretrained = model_dir+"pretrained/"
-        data_dir = '/media/u/t1/dataset/CLUEdatasets/'
+        data_dir = '../../dataset/CLUEdatasets/'
         dic2={
             "model_dir":pretrained,
             "model_name_or_path": pretrained,

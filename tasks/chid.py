@@ -81,6 +81,7 @@ class TaskDataset(Dataset):
             for i in range(self.config.num_labels):
                 [ idiom, l, r]=[ self.tokenizer.tokenize(x) for x in ( candidates[i], left, right) ]
                 tokens=[Constants.TOKEN_CLS]+[Constants.TOKEN_BOS]+idiom+[Constants.TOKEN_EOS,Constants.TOKEN_BOS]+l+[Constants.TOKEN_MASK]*4+r+[Constants.TOKEN_EOS]
+                tokens=tokens[:self.max_tokens]
                 length=len(tokens)
                 tokens+=[Constants.TOKEN_PAD]*(self.max_tokens-length)
                 type_ids = []
@@ -150,7 +151,7 @@ if __name__ == "__main__":
 
     task_name="chid"
     description="成语阅读理解填空"
-    labels =  ["0", "1"]
+    labels =  [str(i) for i in range(10)] 
     config = {
         # "model_type": "albert",
         # "model_name_or_path": outputs + model_name,
@@ -161,7 +162,8 @@ if __name__ == "__main__":
         # "model_config_path": outputs + f"{model_name}/config.json",
         # "output_dir": outputs + f"{model_name}/task_output",
         # "max_len": 1024,
-        "batch_size":1,
+        "batch_size":10,
+        "n_epochs":1,
         # "num_workers":0,
         # "learning_rate": 5e-5,
         # "logging_steps": 50000,
